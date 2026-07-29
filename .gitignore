@@ -1,0 +1,19 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Personal working document — contains a private project inventory
+SPEC.md
+
+# Design mockup, superseded by the real app
+mockup.py
+
+# Rendered previews of the SVGs
+shots/*.png
