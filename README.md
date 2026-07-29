@@ -9,6 +9,8 @@ It does three things: **repairs Claude sessions that lost their project**, shows
   <img src="shots/roster.png" width="760" alt="the roster: one row per project, with live session state">
 </p>
 
+**[Full guide →](GUIDE.md)** — commands, daily flow, and the gotchas.
+
 ---
 
 ## The problem it was built for
