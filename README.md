@@ -181,6 +181,11 @@ phase  = "phase 2 — baselines"
 Activity is **never** recorded here — it's derived from the session store and
 `git log`. The file holds intent only.
 
+**The roster shows exactly what this file lists — nothing is auto-discovered.**
+To stop tracking a one-off session that isn't really a project, set its status
+to `ignored`: it disappears from the roster, but its sessions stay linked so
+`doctor` won't report them as orphans.
+
 ### Optional: brief Claude on where the project stands
 
 ```json
@@ -202,6 +207,8 @@ dropped. `mc brief --hook` emits it correctly.)
 |---|---|
 | `j` / `k` | move |
 | `⏎` | open detail (roster) · resume (detail) |
+| `j` / `k` | move · on the detail screen, expand a check, commit or session |
+| `g` / `G` | jump to top / bottom |
 | `o` / `w` | resume in the left pane / in a new window |
 | `x` | retire (confirm first) |
 | `c` | month checkpoint: the month so far, plus any written prompts |

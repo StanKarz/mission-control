@@ -52,6 +52,37 @@ def last_commit(repo: Path) -> Commit | None:
     return c
 
 
+def recent_commits(repo: Path, limit: int = 5) -> list[Commit]:
+    """Newest commits with their shortstat, for the detail view."""
+    out = _git(repo, "log", f"-{limit}", "--pretty=%h%x00%s%x00%ar", "--shortstat")
+    if not out:
+        return []
+    commits: list[Commit] = []
+    for line in out.splitlines():
+        if "\x00" in line:
+            sha, subject, when = line.split("\x00")
+            commits.append(Commit(sha=sha, subject=subject, when=when))
+        elif commits and ("file" in line or "insertion" in line or "deletion" in line):
+            parts = line.replace(",", "").split()
+            for i, tok in enumerate(parts):
+                if tok.startswith("file"):
+                    commits[-1].files = int(parts[i - 1])
+                elif tok.startswith("insertion"):
+                    commits[-1].added = int(parts[i - 1])
+                elif tok.startswith("deletion"):
+                    commits[-1].removed = int(parts[i - 1])
+    return commits
+
+
+def commit_files(repo: Path, sha: str, limit: int = 12) -> list[str]:
+    """Paths touched by one commit."""
+    out = _git(repo, "show", "--stat=200", "--pretty=format:", "--name-only", sha)
+    if not out:
+        return []
+    names = [l.strip() for l in out.splitlines() if l.strip()]
+    return names[:limit]
+
+
 def commits_between(repo: Path, since: date, until: date) -> list[Commit]:
     """Commits authored in [since, until]. `until` is inclusive, so the git
     boundary is pushed a day forward — `--until` is exclusive of the day's

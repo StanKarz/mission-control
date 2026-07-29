@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from pathlib import Path
 
 from textual.app import App, ComposeResult
 from textual.binding import Binding
@@ -276,8 +277,19 @@ def resume(screen, p, store, new_window: bool = False) -> None:
 
 
 class Detail(Screen):
+    """One project, in as much depth as the terminal has room for.
+
+    Columns are sized from the actual screen width rather than a fixed 76, so
+    running full-screen stops truncating things for no reason. j/k moves a
+    cursor through the checks, commits and sessions; whatever is selected
+    renders expanded, which is where the full commit subject, the files it
+    touched, and the session's edited files live.
+    """
+
     BINDINGS = [
         Binding("escape", "app.pop_screen", "back"),
+        Binding("j,down", "move(1)", "down"),
+        Binding("k,up", "move(-1)", "up"),
         Binding("enter", "resume", "resume"),
         Binding("w", "resume(True)", "new window"),
     ]
@@ -289,33 +301,33 @@ class Detail(Screen):
     Digits  {{ width: 16; color: {TEAL}; }}
     #nopct  {{ width: 16; }}
     #herotxt{{ padding: 1 0 0 1; width: 1fr; }}
-    #checks {{ padding: 1 0 0 0; }}
-    #week   {{ padding: 1 0 0 0; }}
-    #recent {{ padding: 1 0 0 0; }}
+    #body   {{ padding: 1 0 0 0; height: 1fr; }}
     #keys   {{ padding: 1 0 0 0; }}
     """
 
     def __init__(self, project, store, idx, total):
         super().__init__()
         self.p, self.store, self.idx, self.total = project, store, idx, total
+        self.cursor = 0
+        self.items: list[tuple[str, object]] = []
 
-    def action_resume(self, new_window: bool = False) -> None:
-        resume(self, self.p, self.store, new_window)
+    # -- layout ------------------------------------------------------------
+    @property
+    def _w(self) -> int:
+        """Usable text width. Falls back to 76 before the first layout pass."""
+        return max((self.size.width or 76) - 8, 48)
 
     def compose(self) -> ComposeResult:
         p = self.p
         ok, total, pct = checks.progress(p)
         colour, dot = STATUS.get(p.status if p.exists else "stranded", (DIM, "○"))
+        home = str(Path.home())
+        shown = str(p.path).replace(home, "~")
         with Vertical(id="wrap"):
             yield Static(
                 f"[{MUTED}]◂ {self.idx + 1}/{self.total}[/]  [b {FG}]{p.name}[/]  "
-                f"[{colour}]{dot} {p.status}[/]"
-                f"[{DIM}]   {str(p.path).replace(str(p.path.home()), '~')}[/]\n"
-                f"[{FAINT}]{'━' * 68}[/]", id="title")
-
+                f"[{colour}]{dot} {p.status}[/][{DIM}]   {shown}[/]", id="title")
             with Horizontal(id="hero"):
-                # With no checks there is no percentage to report — an unqualified
-                # 0% would read as "nothing done" rather than "nothing measured".
                 if total:
                     yield Digits(f"{round(pct)}")
                     right = (f"[b {TEAL}]%[/]  [b {CYAN}]{p.phase or p.status}[/]\n"
@@ -325,56 +337,153 @@ class Detail(Screen):
                     yield Static(f"\n[{FAINT}]  ─────[/]", id="nopct")
                     right = (f"[b {CYAN}]{p.phase or p.status}[/]\n"
                              f"[{DIM}]   progress not measured yet[/]\n"
-                             f"[{FAINT}]   define checks to get a percentage[/]")
+                             f"[{FAINT}]   run /init-project to define checks[/]")
                 yield Static(right, id="herotxt")
+            yield Static("", id="body")
+            yield Static("", id="keys")
 
-            lines, nxt = [], None
-            for c in p.checks:
-                r = checks.evaluate_fast(p, c) if checks.is_fast(c) else None
-                if r is True:
-                    mark, mc, nc = "✔", GREEN, FG
-                elif r is False:
-                    mark, mc, nc = "✖", RED, FG
-                    nxt = nxt or c
-                else:
-                    mark, mc, nc = "○", DIM, DIM
-                val = c.value or ("done" if c.done else "not done")
-                lines.append(f"  [{mc}]{mark}[/] [{nc}]{fit(c.name, 18)}[/] "
-                             f"[{MUTED}]{fit(c.type, 8)}[/][{DIM}]{val}[/]")
-            body = "\n".join(lines) or f"  [{DIM}]no checks defined — run /init-project[/]"
-            if nxt:
-                body += (f"\n\n  [{RED}]▸[/] [b {FG}]next[/]  [{FG}]{nxt.name}[/] "
-                         f"[{DIM}]— {nxt.value}[/]")
-            yield Static(f"[{DIM}]CHECKS[/]\n{body}", id="checks")
+    def on_mount(self) -> None:
+        self._collect()
+        self._paint()
 
-            wk = self.store.week(str(p.path), p.aliases)
-            cm = activity.week_commits(p.repos)
-            lc = activity.last_commit(p.path)
-            # Floor the scale, as the roster does. Without it a week of one
-            # session a day is seven equal values, every bar renders at max,
-            # and a quiet week is indistinguishable from a frantic one.
-            hi = max(4, max(wk, default=0), max(cm, default=0))
-            week = (f"[{DIM}]ACTIVITY[/]     [{MUTED}]M T W T F S S[/]\n"
-                    f"[{DIM}]  commits[/]     {heat(cm)}    "
-                    f"[{MUTED}]week[/] {spark(cm, hi=hi)} [{FG}]{sum(cm)}[/]\n"
-                    f"[{DIM}] sessions[/]     {heat(wk)}    "
-                    f"[{MUTED}]week[/] {spark(wk, TEAL, hi=hi)} [{FG}]{sum(wk)}[/]")
-            if lc:
-                week += (f"\n\n  [{BLUE}]▸[/] [{FG}]{lc.sha}[/]  {fit(lc.subject, 34)}"
-                         f"[{DIM}]{lc.when:>12}[/]\n"
-                         f"    [{MUTED}]{lc.files} files  +{lc.added} −{lc.removed}[/]")
-            yield Static(week, id="week")
+    def on_resize(self) -> None:
+        self._paint()
 
-            recents = self.store.recent(str(p.path), p.aliases)
-            rl = "\n".join(
-                f"  [{MUTED}]{s.ended:%a %H:%M}[/]  [{FG}]{fit(s.title or '(untitled)', 34)}[/]"
-                f"[{MUTED}]{s.prompts:>4}p · {sum(s.edits.values())}e[/]"
-                for s in recents if s.ended
-            ) or f"  [{DIM}]no sessions yet[/]"
-            yield Static(f"[{DIM}]RECENT SESSIONS[/]\n{rl}", id="recent")
-            yield Static(
-                f"[{DIM}]⏎ resume in left pane   w new window   esc back   q quit[/]",
-                id="keys")
+    # -- data --------------------------------------------------------------
+    def _collect(self) -> None:
+        p = self.p
+        self.items = [("check", c) for c in p.checks]
+        for repo in (p.repos or [p.path]):
+            if repo.is_dir():
+                self.items += [("commit", c) for c in activity.recent_commits(repo, 5)]
+                break
+        self.items += [("session", s)
+                       for s in self.store.recent(str(p.path), p.aliases, limit=5)
+                       if s.ended]
+
+    # -- rendering ---------------------------------------------------------
+    def _check_lines(self, c, sel: bool) -> list[str]:
+        r = checks.evaluate_fast(self.p, c) if checks.is_fast(c) else None
+        if r is True:
+            mark, mc = "✔", GREEN
+        elif r is False:
+            mark, mc = "✖", RED
+        else:
+            mark, mc = "○", MUTED
+        w = self._w
+        if not sel:
+            room = max(w - 34, 20)
+            val = c.value or ("done" if c.done else "not done")
+            return [f"  [{mc}]{mark}[/] [{FG}]{fit(c.name, 20)}[/] "
+                    f"[{MUTED}]{fit(c.type, 9)}[/][{DIM}]{fit(val, room)}[/]"]
+        out = [f"  [{mc}]{mark}[/] [b {FG}]{c.name}[/]  [{MUTED}]{c.type}[/]"]
+        if c.value:
+            out.append(f"      [{DIM}]{c.value}[/]")
+        if c.type == "manual":
+            out.append(f"      [{DIM}]done = {str(c.done).lower()} "
+                       f"— set by hand in progress.toml[/]")
+        elif r is None:
+            out.append(f"      [{MUTED}]not evaluated here: {c.type} checks shell out, "
+                       f"so they run on demand[/]")
+        else:
+            out.append(f"      [{GREEN if r else RED}]"
+                       f"{'passing' if r else 'not yet'}[/]")
+        return out
+
+    def _commit_lines(self, cm, sel: bool) -> list[str]:
+        w = self._w
+        if not sel:
+            room = max(w - 30, 24)
+            return [f"  [{BLUE}]▸[/] [{FG}]{cm.sha}[/]  {fit(cm.subject, room)}"
+                    f"[{MUTED}]{cm.when}[/]"]
+        out = [f"  [{BLUE}]▸[/] [b {FG}]{cm.sha}[/]  [{FG}]{cm.subject}[/]",
+               f"      [{MUTED}]{cm.when} · {cm.files} file(s) "
+               f"+{cm.added} −{cm.removed}[/]"]
+        repo = next((r for r in (self.p.repos or [self.p.path]) if r.is_dir()), None)
+        if repo:
+            for f in activity.commit_files(repo, cm.sha):
+                out.append(f"      [{DIM}]{fit(f, w - 8)}[/]")
+        return out
+
+    def _session_lines(self, s, sel: bool) -> list[str]:
+        w = self._w
+        edits = sum(s.edits.values())
+        if not sel:
+            room = max(w - 32, 24)
+            return [f"  [{MUTED}]{s.ended:%a %H:%M}[/]  "
+                    f"[{FG}]{fit(s.title or '(untitled)', room)}[/]"
+                    f"[{MUTED}]{s.prompts}p · {edits}e[/]"]
+        out = [f"  [{MUTED}]{s.ended:%a %d %b %H:%M}[/]  "
+               f"[b {FG}]{s.title or '(untitled)'}[/]",
+               f"      [{MUTED}]{s.started:%H:%M}–{s.ended:%H:%M} · "
+               f"{s.prompts} prompts · {edits} edits[/]"]
+        for path, n in s.edits.most_common(8):
+            name = str(path).replace(str(self.p.path) + "/", "")
+            out.append(f"      [{DIM}]{fit(name, w - 14)}[/][{MUTED}]×{n}[/]")
+        return out
+
+    def _paint(self) -> None:
+        p, w = self.p, self._w
+        lines: list[str] = []
+
+        def section(label: str) -> None:
+            if lines:
+                lines.append("")
+            lines.append(f"[{DIM}]{label}[/]")
+
+        kinds = [k for k, _ in self.items]
+        section("CHECKS")
+        if "check" not in kinds:
+            lines.append(f"  [{MUTED}]none defined — run /init-project[/]")
+        nxt = None
+        for i, (kind, obj) in enumerate(self.items):
+            if kind != "check":
+                continue
+            lines += self._check_lines(obj, i == self.cursor)
+            if (nxt is None and checks.is_fast(obj)
+                    and checks.evaluate_fast(p, obj) is False):
+                nxt = obj
+        if nxt:
+            lines.append(f"\n  [{RED}]▸[/] [b {FG}]next[/]  [{FG}]{nxt.name}[/]"
+                         + (f" [{DIM}]— {nxt.value}[/]" if nxt.value else ""))
+
+        wk = self.store.week(str(p.path), p.aliases)
+        cm_counts = activity.week_commits(p.repos)
+        hi = max(4, max(wk, default=0), max(cm_counts, default=0))
+        section("ACTIVITY")
+        lines.append(f"             [{MUTED}]M T W T F S S[/]")
+        lines.append(f"  [{DIM}]commits[/]    {heat(cm_counts)}   "
+                     f"[{MUTED}]week[/] {spark(cm_counts, hi=hi)} "
+                     f"[{FG}]{sum(cm_counts)}[/]")
+        lines.append(f"  [{DIM}]sessions[/]   {heat(wk)}   "
+                     f"[{MUTED}]week[/] {spark(wk, TEAL, hi=hi)} [{FG}]{sum(wk)}[/]")
+
+        if "commit" in kinds:
+            section("COMMITS")
+            for i, (kind, obj) in enumerate(self.items):
+                if kind == "commit":
+                    lines += self._commit_lines(obj, i == self.cursor)
+
+        if "session" in kinds:
+            section("SESSIONS")
+            for i, (kind, obj) in enumerate(self.items):
+                if kind == "session":
+                    lines += self._session_lines(obj, i == self.cursor)
+
+        self.query_one("#body", Static).update("\n".join(lines))
+        hint = (f"[{MUTED}]j/k expand a row   [/]" if self.items else "")
+        self.query_one("#keys", Static).update(
+            f"{hint}[{DIM}]⏎ resume   w new window   esc back   q quit[/]")
+
+    # -- actions -----------------------------------------------------------
+    def action_move(self, delta: int) -> None:
+        if not self.items:
+            return
+        self.cursor = (self.cursor + delta) % len(self.items)
+        self._paint()
+
+    def action_resume(self, new_window: bool = False) -> None:
+        resume(self, self.p, self.store, new_window)
 
 
 class MissionControl(App):
