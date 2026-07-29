@@ -283,3 +283,44 @@ def test_merge_keeps_files_unique_to_each_side(tmp_path, monkeypatch):
     ok, log = reconcile.apply([reconcile.Op("slug", src, dst)])
     assert {f.name for f in dst.glob("*.jsonl")} == {"one.jsonl", "two.jsonl"}
     assert ok, log
+
+
+def test_merge_refuses_to_resolve_divergent_transcripts(tmp_path, monkeypatch):
+    """Two continuations of the same session id where neither contains the
+    other. Choosing by size or mtime destroys whichever loses, so the merge
+    must report it and leave both alone."""
+    from mission_control import reconcile
+    store = tmp_path / "store"
+    src, dst = store / "-old", store / "-new"
+    src.mkdir(parents=True)
+    dst.mkdir(parents=True)
+    name = "s.jsonl"
+    (dst / name).write_text("\n".join(f'{{"n":{i}}}' for i in range(60)) + "\n")
+    (src / name).write_text("\n".join(f'{{"x":{i}}}' for i in range(20)) + "\n")
+    monkeypatch.setattr(reconcile, "STORE", store)
+    monkeypatch.setattr(reconcile, "ARCHIVE", tmp_path / "archive")
+
+    ok, log = reconcile.apply([reconcile.Op("slug", src, dst)])
+    assert not ok, "a divergent merge must not report success"
+    assert any("divergent" in l for l in log), log
+    assert (src / name).exists(), "the divergent file must be left in place"
+    assert sum(1 for _ in (dst / name).open()) == 60, "target must be untouched"
+
+
+def test_merge_drops_a_redundant_prefix_and_removes_the_empty_dir(tmp_path, monkeypatch):
+    from mission_control import reconcile
+    store = tmp_path / "store"
+    src, dst = store / "-old", store / "-new"
+    src.mkdir(parents=True)
+    dst.mkdir(parents=True)
+    name = "s.jsonl"
+    full = "\n".join(f'{{"n":{i}}}' for i in range(60)) + "\n"
+    (dst / name).write_text(full)
+    (src / name).write_text("\n".join(f'{{"n":{i}}}' for i in range(20)) + "\n")
+    monkeypatch.setattr(reconcile, "STORE", store)
+    monkeypatch.setattr(reconcile, "ARCHIVE", tmp_path / "archive")
+
+    ok, log = reconcile.apply([reconcile.Op("slug", src, dst)])
+    assert ok, log
+    assert (dst / name).read_text() == full
+    assert not src.exists(), "stale slug dir should be gone once redundant"

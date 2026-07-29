@@ -136,39 +136,67 @@ def _count(f: Path) -> int:
         return -1
 
 
-def _merge_dir(src: Path, dst: Path) -> None:
-    """Move src's contents into dst, without ever losing transcript history.
+def _lines_of(f: Path) -> list[str]:
+    try:
+        return f.read_text(errors="replace").splitlines()
+    except OSError:
+        return []
 
-    Two slug directories can hold the **same session id** — a live session
-    keeps writing to its old slug after a move, so the old directory
-    regenerates a short stub of a transcript that also exists, much longer, in
-    the new one. Resolving that by newest mtime would overwrite the long file
-    with the stub, because the stub is what was written most recently.
 
-    Transcripts are append-only, so more lines means more history: for
-    ``.jsonl`` the longer file wins regardless of mtime. Anything else falls
-    back to newest-wins. Losers are left in place for the archive copy rather
-    than deleted, and the source directory is only removed once empty.
+def _redundant(a: Path, b: Path) -> bool:
+    """True when every line of `a` already appears in `b`, so dropping `a`
+    loses nothing. Transcripts are append-only, so the usual case is that one
+    is a prefix of the other — but not always, and assuming it is loses data."""
+    la, lb = _lines_of(a), _lines_of(b)
+    return bool(la) and set(la) <= set(lb)
+
+
+def _merge_dir(src: Path, dst: Path) -> list[str]:
+    """Move src's contents into dst. Returns a list of unresolved conflicts.
+
+    Two slug directories can hold the **same session id**: a live session keeps
+    writing to its old slug after a move, so both directories accumulate a
+    transcript under one name. Three things can be true of that pair, and only
+    the first two are safe to decide automatically:
+
+    * the incoming file is redundant — every line already in the target, so
+      drop it;
+    * the target is redundant — the incoming file is the fuller record, so it
+      wins;
+    * **neither contains the other.** Two divergent continuations of the same
+      session. Picking by size or mtime silently destroys whichever loses, so
+      this is reported and left alone for a human to resolve.
     """
+    conflicts: list[str] = []
     dst.mkdir(parents=True, exist_ok=True)
     for item in sorted(src.iterdir()):
         target = dst / item.name
         if not target.exists():
             shutil.move(str(item), str(target))
         elif item.is_dir():
-            _merge_dir(item, target)
+            conflicts += _merge_dir(item, target)
         elif item.suffix == ".jsonl":
-            if _count(item) > _count(target):
+            if _redundant(item, target):
+                item.unlink()                       # archived already
+            elif _redundant(target, item):
                 shutil.move(str(item), str(target))
+            else:
+                only = len(set(_lines_of(item)) - set(_lines_of(target)))
+                conflicts.append(
+                    f"{item.name}: divergent history, {only} line(s) exist only "
+                    f"in {src.name} — left in place, resolve by hand")
         elif item.stat().st_mtime > target.stat().st_mtime:
             shutil.move(str(item), str(target))
+        else:
+            item.unlink()
     if src.is_dir() and not any(src.iterdir()):
         src.rmdir()
+    return conflicts
 
 
-def _move_slug(src: Path, dst: Path) -> None:
+def _move_slug(src: Path, dst: Path) -> list[str]:
     if src.resolve() == dst.resolve() and src.name == dst.name:
-        return
+        return []
     if src.name.lower() == dst.name.lower() and src.name != dst.name:
         # Case-only rename on a case-insensitive filesystem: hop via a temp name,
         # otherwise this is a rename onto itself and the merge branch corrupts.
@@ -176,10 +204,11 @@ def _move_slug(src: Path, dst: Path) -> None:
         src.rename(tmp)
         tmp.rename(dst)
     elif dst.exists():
-        _merge_dir(src, dst)
+        return _merge_dir(src, dst)
     else:
         dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.move(str(src), str(dst))
+    return []
 
 
 def apply(ops: list[Op], *, dry_run: bool = False, tag: str = "") -> tuple[bool, list[str]]:
@@ -188,6 +217,7 @@ def apply(ops: list[Op], *, dry_run: bool = False, tag: str = "") -> tuple[bool,
     if dry_run:
         return True, [str(o) for o in ops]
 
+    ok_conflicts: list[str] = []
     stamp = ARCHIVE / f"reconcile-{tag or date.today().isoformat()}"
     # Expected line count per destination file. A merge means the destination
     # may already hold a file of the same name, so the expectation is the
@@ -217,10 +247,13 @@ def apply(ops: list[Op], *, dry_run: bool = False, tag: str = "") -> tuple[bool,
         else:
             if not o.src.is_dir():
                 continue
-            _move_slug(o.src, o.dst)
+            conflicts = _move_slug(o.src, o.dst)
             log.append(f"moved slug {o.dst.name[:56]}")
+            for c in conflicts:
+                log.append(f"CONFLICT   {c}")
+                ok_conflicts.append(c)
 
-    ok = True
+    ok = not ok_conflicts
     for dst, counts in before.items():
         after = _lines(dst)
         if after != counts:

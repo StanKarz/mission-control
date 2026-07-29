@@ -71,15 +71,31 @@ def app(tmp_path, monkeypatch):
     return MissionControl()
 
 
-async def test_roster_renders(app):
+async def test_roster_hides_finished_and_parked_work_by_default(app):
+    """alpha is active, beta blocked, gamma archived. Only work in flight
+    should be on screen; the rest is one keypress away."""
     async with app.run_test(size=(76, 30)) as pilot:
         await pilot.pause()
+        assert [p.name for p in app.screen.rows] == ["alpha", "beta"]
+        assert app.screen.hidden_count == 1
+
+
+async def test_a_reveals_everything(app):
+    async with app.run_test(size=(76, 30)) as pilot:
+        await pilot.pause()
+        await pilot.press("a")
+        await pilot.pause()
         assert [p.name for p in app.screen.rows] == ["alpha", "beta", "gamma"]
+        await pilot.press("a")
+        await pilot.pause()
+        assert [p.name for p in app.screen.rows] == ["alpha", "beta"]
 
 
 async def test_detail_renders_for_every_project(app):
     """Would have caught the undefined `hi` in the activity block."""
     async with app.run_test(size=(76, 30)) as pilot:
+        await pilot.pause()
+        await pilot.press("a")      # include archived, so every kind renders
         await pilot.pause()
         for i in range(len(app.screen.rows)):
             app.screen.index = i

@@ -33,6 +33,7 @@ class Roster(Screen):
         Binding("w", "resume(True)", "new window"),
         Binding("x", "retire", "retire"),
         Binding("c", "run_checks", "run checks"),
+        Binding("a", "toggle_all", "show all"),
         Binding("m", "checkpoint", "month"),
         Binding("r", "refresh", "refresh"),
     ]
@@ -52,6 +53,9 @@ class Roster(Screen):
         self.store = Store()
         self.index = 0
         self.rows: list[config.Project] = []
+        # Finished and parked work is still tracked, but showing it by default
+        # buries the handful of projects actually in flight. `a` reveals it.
+        self.show_all = False
 
     def compose(self) -> ComposeResult:
         yield Static("", id="head")
@@ -72,8 +76,11 @@ class Roster(Screen):
     def refresh_data(self) -> None:
         """Full rebuild: config reloaded, row widgets remounted."""
         self.cfg = config.load()
+        live = {"active", "blocked"}
+        candidates = [p for p in self.cfg.projects if p.visible]
+        self.hidden_count = sum(1 for p in candidates if p.status not in live)
         self.rows = sorted(
-            (p for p in self.cfg.projects if p.visible),
+            (p for p in candidates if self.show_all or p.status in live),
             key=lambda p: (ORDER.get(p.status, 9), p.name.lower()),
         )
         self.index = min(self.index, max(len(self.rows) - 1, 0))
@@ -146,7 +153,7 @@ class Roster(Screen):
         act = sum(1 for p in self.rows if p.status == "active")
         self.query_one("#head", Static).update(
             f"[b {FG}]MISSION[/][b {CYAN}] CONTROL[/]"
-            f"[{DIM}]{'':<22}{act}/{n} active  ·  "
+            f"[{DIM}]{'':<22}{act} active  ·  "
             f"{datetime.now():%a %d %b %H:%M}[/]"
         )
         # today's recap, attributed by file path rather than by slug
@@ -174,9 +181,14 @@ class Roster(Screen):
         if orph:
             health.append(f"[{AMBER}]▲ {orph} unknown slugs[/]")
         health.append(f"[{TEAL}]● {act} active[/]")
+        hidden = getattr(self, "hidden_count", 0)
+        if hidden and not self.show_all:
+            health.append(f"[{MUTED}]+{hidden} done/parked — a[/]")
+        elif self.show_all:
+            health.append(f"[{MUTED}]showing all — a[/]")
         self.query_one("#foot", Static).update(
             f"[{DIM}]TODAY[/]    {line}\n\n" + "   ".join(health) +
-            f"\n\n[{DIM}]⏎ open   o resume   w window   c run checks   "
+            f"\n\n[{DIM}]⏎ open   o resume   c run checks   a all   "
             f"m month   x retire   q quit[/]"
         )
 
@@ -186,6 +198,11 @@ class Roster(Screen):
             return
         self.index = (self.index + delta) % len(self.rows)
         self._repaint(scroll=True)
+
+    def action_toggle_all(self) -> None:
+        self.show_all = not self.show_all
+        self.index = 0
+        self.refresh_data()
 
     def action_goto(self, where: int) -> None:
         if self.rows:

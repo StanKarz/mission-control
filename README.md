@@ -187,6 +187,8 @@ Activity is **never** recorded here — it's derived from the session store and
 `git log`. The file holds intent only.
 
 **The roster shows exactly what this file lists — nothing is auto-discovered.**
+By default it shows only `active` and `blocked` work; `done` and `archived`
+projects are one `a` away rather than cluttering the view.
 To stop tracking a one-off session that isn't really a project, set its status
 to `ignored`: it disappears from the roster, but its sessions stay linked so
 `doctor` won't report them as orphans.
@@ -217,6 +219,7 @@ dropped. `mc brief --hook` emits it correctly.)
 | `o` / `w` | resume in the left pane / in a new window |
 | `x` | retire (confirm first) |
 | `c` | run this project's `cmd` / `gh_pr` checks |
+| `a` | show finished and parked projects too (hidden by default) |
 | `m` | month checkpoint: the month so far, plus any written prompts |
 | `r` | refresh |
 | `q` | quit |
