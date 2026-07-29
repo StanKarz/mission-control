@@ -444,6 +444,10 @@ def main() -> int:
             return 2
         return cmd_new(argv[1], launch)
     if cmd:
+        # Printing bare help for an unrecognised word reads as "here are some
+        # commands" rather than "that is not one of them" — which is exactly
+        # how a stale install presents itself.
+        print(f"unknown command: {cmd}\n", file=sys.stderr)
         print(__doc__)
         return 2
     from .app import MissionControl

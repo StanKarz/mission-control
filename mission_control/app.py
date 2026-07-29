@@ -30,7 +30,6 @@ class Roster(Screen):
         Binding("x", "retire", "retire"),
         Binding("c", "checkpoint", "checkpoint"),
         Binding("r", "refresh", "refresh"),
-        Binding("q", "quit", "quit"),
     ]
     CSS = f"""
     Screen {{ background: {BG}; color: {FG}; }}
@@ -265,7 +264,7 @@ def resume(screen, p, store, new_window: bool = False) -> None:
 
 class Detail(Screen):
     BINDINGS = [
-        Binding("escape,q", "app.pop_screen", "back"),
+        Binding("escape", "app.pop_screen", "back"),
         Binding("enter", "resume", "resume"),
         Binding("w", "resume(True)", "new window"),
     ]
@@ -363,6 +362,17 @@ class Detail(Screen):
 
 class MissionControl(App):
     TITLE = "mission control"
+    # Textual binds ctrl+c to a "press ctrl+q to quit" *hint* rather than to
+    # quitting, and q meant "back" on sub-screens but "quit" on the roster —
+    # so leaving took an unpredictable number of presses. One rule instead:
+    # q and ctrl+c always quit; esc always goes back one screen.
+    BINDINGS = [
+        # Not priority: bindings bubble focused-widget -> screen -> app, so a
+        # modal asking a question can still claim q as "cancel", while q quits
+        # from every screen that does not.
+        Binding("q", "quit", "quit"),
+        Binding("ctrl+c", "quit", "quit", show=False),
+    ]
 
     def on_mount(self) -> None:
         self.push_screen(Roster())

@@ -16,9 +16,11 @@ from .render import AMBER, BG, CYAN, DIM, FAINT, FG, GREEN, PANEL, TEAL
 class Confirm(ModalScreen[bool]):
     """Yes/no gate in front of anything that moves files."""
 
+    # priority, so the app-level "q quits" cannot fire while a confirmation is
+    # on screen — answering a question must never exit the app.
     BINDINGS = [
-        Binding("y", "yes", "yes"),
-        Binding("n,escape,q", "no", "no"),
+        Binding("y", "yes", "yes", priority=True),
+        Binding("n,escape,q", "no", "no", priority=True),
     ]
     CSS = f"""
     Confirm {{ align: center middle; }}
@@ -75,7 +77,7 @@ class Checkpoint(Screen):
     """The four monthly questions, and their most recent answers."""
 
     BINDINGS = [
-        Binding("escape,q", "app.pop_screen", "back"),
+        Binding("escape", "app.pop_screen", "back"),
         Binding("ctrl+s", "save", "save"),
         Binding("tab", "focus_next", "next", show=False),
     ]
@@ -156,7 +158,7 @@ class Checkpoint(Screen):
                     f"are derived.[/]\n"
                     f"[{FAINT}]Add prompts to checkpoint_questions in progress.toml "
                     f"if you want to write anything down.[/]", classes="q")
-                yield Static(f"\n[{DIM}]esc back[/]", id="keys")
+                yield Static(f"\n[{DIM}]esc back     q quit[/]", id="keys")
                 return
 
             for i, q in enumerate(qs):
@@ -170,7 +172,7 @@ class Checkpoint(Screen):
                     yield Static(f"   [{DIM}]{ans or '— not answered —'}[/]")
 
             yield Static(
-                f"[{DIM}]{'ctrl+s save     ' if self.editable else ''}esc back[/]",
+                f"[{DIM}]{'ctrl+s save     ' if self.editable else ''}esc back     q quit[/]",
                 id="keys")
 
     def action_save(self) -> None:
