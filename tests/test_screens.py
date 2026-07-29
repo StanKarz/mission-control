@@ -61,6 +61,8 @@ def app(tmp_path, monkeypatch):
     monkeypatch.setattr("mission_control.sessions.STORE", store)
     monkeypatch.setattr("mission_control.sessions.CACHE", tmp_path / "cache.json")
     monkeypatch.setattr("mission_control.reconcile.STORE", store)
+    # isolate the slow-check result cache too, or tests read real results
+    monkeypatch.setattr("mission_control.checks.CACHE", tmp_path / "checks.json")
 
     import mission_control.config as config
     monkeypatch.setattr(config, "PATH", cfg)
@@ -91,7 +93,7 @@ async def test_detail_renders_for_every_project(app):
 async def test_checkpoint_renders(app):
     async with app.run_test(size=(76, 30)) as pilot:
         await pilot.pause()
-        await pilot.press("c")
+        await pilot.press("m")
         await pilot.pause()
         assert type(app.screen).__name__ == "Checkpoint"
 
@@ -110,7 +112,7 @@ async def test_arrow_keys_move_the_selection_not_the_scrollbar(app):
         assert r.index == 0
 
 
-@pytest.mark.parametrize("keys", [["q"], ["ctrl+c"], ["enter", "q"], ["c", "q"]])
+@pytest.mark.parametrize("keys", [["q"], ["ctrl+c"], ["enter", "q"], ["m", "q"]])
 async def test_q_and_ctrl_c_quit_from_anywhere(app, keys):
     async with app.run_test(size=(76, 30)) as pilot:
         await pilot.pause()
@@ -136,7 +138,7 @@ async def test_typing_q_into_the_checkpoint_box_does_not_quit(app, monkeypatch):
     monkeypatch.setattr(modals, "is_open", lambda today=None, window=3: True)
     async with app.run_test(size=(76, 30)) as pilot:
         await pilot.pause()
-        await pilot.press("c")
+        await pilot.press("m")
         await pilot.pause()
         box = app.screen.areas[0]
         box.focus()
@@ -156,3 +158,18 @@ async def test_progress_shows_no_percentage_when_nothing_is_measured(app):
         beta = r._row(r.rows[1], False)      # has none
         assert "50%" in alpha
         assert "%" not in beta, "a project with no checks must not report a percentage"
+
+
+async def test_c_runs_slow_checks_and_caches_the_result(app, tmp_path):
+    """cmd checks are unreachable from any render path, so without this key
+    a project whose checks are mostly cmd reports a permanent zero."""
+    from mission_control import checks, config
+    cfg = config.load()
+    alpha = next(p for p in cfg.projects if p.name == "alpha")
+    alpha.checks.append(config.Check(name="always ok", type="cmd", value="true"))
+
+    assert checks.progress(alpha)[0] == 1          # readme only; cmd unresolved
+    checks.run_all_slow(alpha)
+    assert checks.cached(alpha)["always ok"] is True
+    assert checks.progress(alpha)[0] == 2, "cached slow result must count"
+    assert checks.cached_at(alpha) is not None

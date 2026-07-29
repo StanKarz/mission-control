@@ -83,6 +83,11 @@ value = "results/baseline.json"
 ```
 
 Five types: `path`, `git_tag`, `cmd`, `gh_pr`, and `manual` as the escape hatch.
+
+`path`, `git_tag` and `manual` are cheap and evaluate on every open. `cmd` and
+`gh_pr` shell out or hit the network, so they never run in a render path — press
+`c` (or run `mc check`) to evaluate them; the result is cached and counts towards
+the percentage until you run them again, with the last-run time shown.
 Progress is `passing ÷ total`, recomputed every time — it can't drift, because
 nothing is remembered. A project with no checks shows `—`, never `0%`.
 
@@ -211,7 +216,8 @@ dropped. `mc brief --hook` emits it correctly.)
 | `g` / `G` | jump to top / bottom |
 | `o` / `w` | resume in the left pane / in a new window |
 | `x` | retire (confirm first) |
-| `c` | month checkpoint: the month so far, plus any written prompts |
+| `c` | run this project's `cmd` / `gh_pr` checks |
+| `m` | month checkpoint: the month so far, plus any written prompts |
 | `r` | refresh |
 | `q` | quit |
 

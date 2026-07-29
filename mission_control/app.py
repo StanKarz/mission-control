@@ -32,7 +32,8 @@ class Roster(Screen):
         Binding("o", "resume", "resume"),
         Binding("w", "resume(True)", "new window"),
         Binding("x", "retire", "retire"),
-        Binding("c", "checkpoint", "checkpoint"),
+        Binding("c", "run_checks", "run checks"),
+        Binding("m", "checkpoint", "month"),
         Binding("r", "refresh", "refresh"),
     ]
     CSS = f"""
@@ -175,7 +176,8 @@ class Roster(Screen):
         health.append(f"[{TEAL}]● {act} active[/]")
         self.query_one("#foot", Static).update(
             f"[{DIM}]TODAY[/]    {line}\n\n" + "   ".join(health) +
-            f"\n\n[{DIM}]⏎ open   o resume   w window   x retire   c checkpoint   q quit[/]"
+            f"\n\n[{DIM}]⏎ open   o resume   w window   c run checks   "
+            f"m month   x retire   q quit[/]"
         )
 
     # -- actions -----------------------------------------------------------
@@ -197,6 +199,33 @@ class Roster(Screen):
 
     def action_refresh(self) -> None:
         self.refresh_data()
+
+    def action_run_checks(self) -> None:
+        """Evaluate the slow checks for the selected project.
+
+        On a worker: cmd checks shell out and gh_pr hits the network, so this
+        must never happen on a render path. Results are cached, which is what
+        lets the roster show a real number for a project whose checks are
+        mostly cmd rather than a permanent zero.
+        """
+        if not self.rows:
+            return
+        p = self.rows[self.index]
+        slow = [c for c in p.checks if not checks.is_fast(c)]
+        if not slow:
+            self.notify(f"{p.name}: no cmd/gh_pr checks to run")
+            return
+        self.notify(f"running {len(slow)} check(s) for {p.name}…")
+        self.run_worker(lambda: checks.run_all_slow(p), thread=True,
+                        name=f"checks:{p.name}")
+
+    def on_worker_state_changed(self, event) -> None:
+        from textual.worker import WorkerState
+        if event.state is WorkerState.SUCCESS and str(event.worker.name).startswith("checks:"):
+            res = event.worker.result or {}
+            passed = sum(1 for v in res.values() if v)
+            self.notify(f"{passed}/{len(res)} passing")
+            self._repaint()
 
     def action_checkpoint(self) -> None:
         from .modals import Checkpoint
@@ -446,6 +475,10 @@ class Detail(Screen):
         if nxt:
             lines.append(f"\n  [{RED}]▸[/] [b {FG}]next[/]  [{FG}]{nxt.name}[/]"
                          + (f" [{DIM}]— {nxt.value}[/]" if nxt.value else ""))
+        if any(not checks.is_fast(c) for c in p.checks):
+            at = checks.cached_at(p)
+            when = f"last run {at:%a %H:%M}" if at else "never run"
+            lines.append(f"  [{MUTED}]cmd/gh_pr checks: {when} — press c[/]")
 
         wk = self.store.week(str(p.path), p.aliases)
         cm_counts = activity.week_commits(p.repos)

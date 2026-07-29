@@ -5,6 +5,7 @@
     mc recap [days]             sessions, day by day
     mc week [n]                 what happened this week (or n weeks ago)
     mc month [n]                same, for a calendar month
+    mc check [project]          run the cmd/gh_pr checks (slow; skipped elsewhere)
     mc doctor                   session-store health; exit 1 if anything is stranded
     mc fix [--go]               relink stranded slugs to where projects now live
     mc mv <project> <dest>      move a project, carrying its sessions with it
@@ -54,6 +55,35 @@ def cmd_recap(days: int = 1) -> int:
             print(f"          \033[2m{s.prompts} prompts · {edits} edits\033[0m")
     store.flush()
     return 0
+
+
+def cmd_check(name: str | None) -> int:
+    """Run the cmd/gh_pr checks that the render path deliberately skips."""
+    cfg = config.load()
+    targets = [p for p in cfg.projects if p.visible and p.checks]
+    if name:
+        p = _project(cfg, name)
+        if not p:
+            return 2
+        targets = [p]
+    rc = 0
+    for p in targets:
+        slow = [c for c in p.checks if not checks.is_fast(c)]
+        if not slow:
+            continue
+        print(f"\n\033[36m▌ {p.name}\033[0m")
+        results = checks.run_all_slow(p)
+        for c in slow:
+            r = results.get(c.name)
+            mark = "\033[32mPASS\033[0m" if r else (
+                "\033[31mFAIL\033[0m" if r is False else "\033[2m????\033[0m")
+            print(f"  {mark}  {c.name}")
+            if not r:
+                print(f"        \033[2m{c.value}\033[0m")
+                rc = 1
+        ok, total, pct = checks.progress(p)
+        print(f"  \033[2m=> {ok}/{total} ({round(pct)}%)\033[0m")
+    return rc
 
 
 def cmd_report(period: str, back: int) -> int:
@@ -436,6 +466,8 @@ def main() -> int:
         return cmd_report("month" if cmd == "month" else "week", abs(back))
     if cmd == "init":
         return cmd_init(go)
+    if cmd == "check":
+        return cmd_check(argv[1] if len(argv) > 1 else None)
     if cmd == "brief":
         return cmd_brief(argv[1] if len(argv) > 1 else None, as_hook)
     if cmd == "new":

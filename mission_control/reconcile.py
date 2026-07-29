@@ -128,16 +128,38 @@ def suggest(recorded_cwd: str | None, roots: list[Path]) -> Path | None:
     return None
 
 
+def _count(f: Path) -> int:
+    try:
+        with f.open(errors="replace") as fh:
+            return sum(1 for _ in fh)
+    except OSError:
+        return -1
+
+
 def _merge_dir(src: Path, dst: Path) -> None:
-    """Move src's contents into dst. For files present in both, newest mtime
-    wins; the loser stays in the archived copy rather than being destroyed."""
+    """Move src's contents into dst, without ever losing transcript history.
+
+    Two slug directories can hold the **same session id** — a live session
+    keeps writing to its old slug after a move, so the old directory
+    regenerates a short stub of a transcript that also exists, much longer, in
+    the new one. Resolving that by newest mtime would overwrite the long file
+    with the stub, because the stub is what was written most recently.
+
+    Transcripts are append-only, so more lines means more history: for
+    ``.jsonl`` the longer file wins regardless of mtime. Anything else falls
+    back to newest-wins. Losers are left in place for the archive copy rather
+    than deleted, and the source directory is only removed once empty.
+    """
     dst.mkdir(parents=True, exist_ok=True)
-    for item in src.iterdir():
+    for item in sorted(src.iterdir()):
         target = dst / item.name
         if not target.exists():
             shutil.move(str(item), str(target))
         elif item.is_dir():
             _merge_dir(item, target)
+        elif item.suffix == ".jsonl":
+            if _count(item) > _count(target):
+                shutil.move(str(item), str(target))
         elif item.stat().st_mtime > target.stat().st_mtime:
             shutil.move(str(item), str(target))
     if src.is_dir() and not any(src.iterdir()):
@@ -167,12 +189,19 @@ def apply(ops: list[Op], *, dry_run: bool = False, tag: str = "") -> tuple[bool,
         return True, [str(o) for o in ops]
 
     stamp = ARCHIVE / f"reconcile-{tag or date.today().isoformat()}"
+    # Expected line count per destination file. A merge means the destination
+    # may already hold a file of the same name, so the expectation is the
+    # *larger* of the two — comparing only against the source reported a
+    # mismatch on a perfectly good merge, which trains you to ignore the check.
     before: dict[Path, dict[str, int]] = {}
 
     for o in ops:
         if o.kind == "slug" and o.src.is_dir():
             shutil.copytree(o.src, stamp / o.src.name, dirs_exist_ok=True)
-            before[o.dst] = _lines(o.src)
+            expect = dict(_lines(o.dst)) if o.dst.is_dir() else {}
+            for name, n in _lines(o.src).items():
+                expect[name] = max(expect.get(name, 0), n)
+            before[o.dst] = expect
     if before:
         log.append(f"archived {len(before)} slug dir(s) to {stamp}")
 

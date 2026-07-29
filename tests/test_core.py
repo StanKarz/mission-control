@@ -239,3 +239,47 @@ def test_tail_reads_only_the_window(tmp_path):
     f = tmp_path / "s.jsonl"
     f.write_text("\n".join(_entry(type="user", n=i) for i in range(500)) + "\n")
     assert len(_tail_entries(f, window=2_000)) < 500
+
+
+# ── merge collisions ─────────────────────────────────────────────────────
+def test_merge_never_replaces_a_longer_transcript_with_a_stub(tmp_path, monkeypatch):
+    """Two slug dirs can hold the same session id: a live session keeps writing
+    to its old slug after a move, regenerating a short stub of a transcript
+    that also exists, far longer, in the new one. The stub has the *newer*
+    mtime, so newest-wins would silently destroy real history."""
+    import os
+    from mission_control import reconcile
+
+    store = tmp_path / "store"
+    src = store / "-old-slug"
+    dst = store / "-new-slug"
+    src.mkdir(parents=True)
+    dst.mkdir(parents=True)
+    name = "aaaa-bbbb.jsonl"
+    (dst / name).write_text("\n".join(f'{{"n":{i}}}' for i in range(500)) + "\n")
+    (src / name).write_text("\n".join(f'{{"n":{i}}}' for i in range(20)) + "\n")
+    # the stub is the most recently written file
+    os.utime(dst / name, (1, 1))
+
+    monkeypatch.setattr(reconcile, "STORE", store)
+    monkeypatch.setattr(reconcile, "ARCHIVE", tmp_path / "archive")
+    ok, log = reconcile.apply([reconcile.Op("slug", src, dst)])
+
+    surviving = sum(1 for _ in (dst / name).open())
+    assert surviving == 500, f"history was truncated to {surviving} lines"
+    assert ok, f"verification should pass: {log}"
+
+
+def test_merge_keeps_files_unique_to_each_side(tmp_path, monkeypatch):
+    from mission_control import reconcile
+    store = tmp_path / "store"
+    src, dst = store / "-a", store / "-b"
+    src.mkdir(parents=True)
+    dst.mkdir(parents=True)
+    (src / "one.jsonl").write_text('{"a":1}\n')
+    (dst / "two.jsonl").write_text('{"b":1}\n')
+    monkeypatch.setattr(reconcile, "STORE", store)
+    monkeypatch.setattr(reconcile, "ARCHIVE", tmp_path / "archive")
+    ok, log = reconcile.apply([reconcile.Op("slug", src, dst)])
+    assert {f.name for f in dst.glob("*.jsonl")} == {"one.jsonl", "two.jsonl"}
+    assert ok, log
