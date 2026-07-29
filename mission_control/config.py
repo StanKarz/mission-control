@@ -43,6 +43,7 @@ class Project:
     path: Path
     status: str = "active"
     phase: str = ""
+    desc: str = ""
     repos: list[Path] = field(default_factory=list)
     aliases: list[str] = field(default_factory=list)
     checks: list[Check] = field(default_factory=list)
@@ -127,6 +128,7 @@ def load(path: Path | None = None) -> Config:
                 path=_expand(str(body.get("path", ""))),
                 status=status,
                 phase=str(body.get("phase", "")),
+                desc=str(body.get("desc", "")),
                 repos=[_expand(str(r)) for r in body.get("repos", [])] or
                       [_expand(str(body.get("path", "")))],
                 aliases=[str(a) for a in body.get("aliases", [])],

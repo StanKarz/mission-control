@@ -101,6 +101,12 @@ left. If that pane is busy — usually, since it's where Claude runs — the sen
 **refused** rather than typed into the running program as a prompt, and `w`
 opens a new window instead.
 
+### Shows what to do next
+
+The highlighted row expands in place: its description, the **next unmet check**,
+the last commit, and the last session. Deciding what to pick up needs the next
+action far more than it needs a percentage.
+
 ### Rolls up the week and the month
 
 ```sh
@@ -181,6 +187,7 @@ checkpoint_questions = ["What did I ship?", "What did I avoid?"]
 path   = "~/projects/orbital-sim"
 status = "active"                       # active|blocked|done|archived|ignored
 phase  = "phase 2 — baselines"
+desc   = "what this is, in one line"    # optional, shown on the selected row
 ```
 
 Activity is **never** recorded here — it's derived from the session store and
@@ -214,7 +221,7 @@ dropped. `mc brief --hook` emits it correctly.)
 |---|---|
 | `j` / `k` | move |
 | `⏎` | open detail (roster) · resume (detail) |
-| `j` / `k` | move · on the detail screen, expand a check, commit or session |
+| `j` / `k` / arrows | move · on the detail screen, expand a check, commit or session |
 | `g` / `G` | jump to top / bottom |
 | `o` / `w` | resume in the left pane / in a new window |
 | `x` | retire (confirm first) |

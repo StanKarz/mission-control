@@ -146,7 +146,57 @@ class Roster(Screen):
             f"   [{DIM}]{fit(p.phase or p.status, 20)}[/]"
             f"[{MUTED}]{cnt:>5} checks[/][{DIM}]{ago(touched):>11}[/]{note}"
         )
-        return f"{line1}\n{line2}"
+        if not sel:
+            return f"{line1}\n{line2}"
+        return "\n".join([line1, line2] + self._preview(p))
+
+    def _preview(self, p: config.Project) -> list[str]:
+        """Extra lines for the highlighted row.
+
+        The point of the roster is deciding what to touch next, and that
+        decision needs the *next unmet check* far more than it needs a
+        percentage. Only computed for one row, so the git call per repaint is
+        affordable.
+        """
+        w = max((self.size.width or 76) - 10, 40)
+        out: list[str] = []
+        if p.desc:
+            out.append(f"     [{MUTED}]{fit(p.desc, w)}[/]")
+
+        nxt = next((c for c in p.checks
+                    if checks.is_fast(c) and checks.evaluate_fast(p, c) is False), None)
+        if nxt is None:
+            slow = checks.cached(p)
+            nxt = next((c for c in p.checks
+                        if not checks.is_fast(c) and slow.get(c.name) is False), None)
+        if nxt:
+            detail = nxt.value or "mark done by hand"
+            room = max(w - (5 + 6 + len(nxt.name) + 3), 16)
+            out.append(f"     [{RED}]next[/]  [{FG}]{nxt.name}[/]   "
+                       f"[{DIM}]{fit(detail, room)}[/]")
+        elif p.checks:
+            out.append(f"     [{GREEN}]all checks passing[/]")
+        else:
+            out.append(f"     [{MUTED}]no checks — run /init-project here[/]")
+
+        repo = next((r for r in (p.repos or [p.path]) if r.is_dir()), None)
+        lc = activity.last_commit(repo) if repo else None
+        if lc:
+            # width has to account for every visible run on the line, not a
+            # guess: indent + label + sha + gaps + the right-hand timestamp.
+            room = max(w - (5 + 6 + len(lc.sha) + 2 + len(lc.when) + 2), 12)
+            out.append(f"     [{MUTED}]last[/]  [{BLUE}]{lc.sha}[/]  "
+                       f"[{DIM}]{fit(lc.subject, room)}[/]  [{MUTED}]{lc.when}[/]")
+
+        recent = self.store.recent(str(p.path), p.aliases, limit=1)
+        if recent and recent[0].ended:
+            s0 = recent[0]
+            tail = f"{s0.prompts}p · {sum(s0.edits.values())}e"
+            room = max(w - (5 + 9 + len(tail) + 2), 12)
+            out.append(f"     [{MUTED}]session[/]  "
+                       f"[{DIM}]{fit(s0.title or '(untitled)', room)}[/]  "
+                       f"[{MUTED}]{tail}[/]")
+        return out
 
     def _chrome(self) -> None:
         n = len(self.rows)
@@ -369,7 +419,9 @@ class Detail(Screen):
         colour, dot = STATUS.get(p.status if p.exists else "stranded", (DIM, "○"))
         home = str(Path.home())
         shown = str(p.path).replace(home, "~")
-        with Vertical(id="wrap"):
+        # Scrollable, and not focusable — otherwise the container eats
+        # up/down for scrolling and the cursor stops moving.
+        with VerticalScroll(id="wrap", can_focus=False):
             yield Static(
                 f"[{MUTED}]◂ {self.idx + 1}/{self.total}[/]  [b {FG}]{p.name}[/]  "
                 f"[{colour}]{dot} {p.status}[/][{DIM}]   {shown}[/]", id="title")
@@ -531,6 +583,12 @@ class Detail(Screen):
             return
         self.cursor = (self.cursor + delta) % len(self.items)
         self._paint()
+        # keep the expanded row on screen when it grows past the fold
+        body = self.query_one("#body")
+        if self.cursor == 0:
+            self.query_one("#wrap").scroll_home(animate=False)
+        elif self.cursor == len(self.items) - 1:
+            self.query_one("#wrap").scroll_end(animate=False)
 
     def action_resume(self, new_window: bool = False) -> None:
         resume(self, self.p, self.store, new_window)
