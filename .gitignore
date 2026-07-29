@@ -15,5 +15,6 @@ SPEC.md
 # Design mockup, superseded by the real app
 mockup.py
 
-# Rendered previews of the SVGs
-shots/*.png
+
+# Quick-look render artefacts
+*.svg.png

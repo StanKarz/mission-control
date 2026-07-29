@@ -6,7 +6,7 @@ It does three things: **repairs Claude sessions that lost their project**, shows
 **progress you can't fake**, and **launches work into the tmux pane next door**.
 
 <p align="center">
-  <img src="shots/roster.svg" width="700" alt="the roster: one row per project, with live session state">
+  <img src="shots/roster.png" width="760" alt="the roster: one row per project, with live session state">
 </p>
 
 ---
