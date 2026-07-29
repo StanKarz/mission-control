@@ -96,6 +96,22 @@ left. If that pane is busy — usually, since it's where Claude runs — the sen
 **refused** rather than typed into the running program as a prompt, and `w`
 opens a new window instead.
 
+### Rolls up the week and the month
+
+```sh
+mc week          # what happened this week
+mc week 1        # ...last week
+mc month         # calendar month
+```
+
+Per project: what was pushed (commit subjects), what was worked on (the session
+titles Claude writes for itself), how many edits, and where the checks stand.
+Plus which projects went quiet.
+
+Not summarised by a model — the commit message *is* the summary, written by
+whoever made the change. The month view is also what the checkpoint screen
+shows, so month-end reflection starts from facts rather than a blank box.
+
 ### Tells you when you're free
 
 Any project with a running session shows `◆ working 4m` or `◆ needs you`,
@@ -188,7 +204,7 @@ dropped. `mc brief --hook` emits it correctly.)
 | `⏎` | open detail (roster) · resume (detail) |
 | `o` / `w` | resume in the left pane / in a new window |
 | `x` | retire (confirm first) |
-| `c` | monthly checkpoint questions |
+| `c` | month checkpoint: the month so far, plus any written prompts |
 | `r` | refresh |
 | `q` | quit |
 
@@ -201,6 +217,17 @@ file and the session store. **No writes to `~/.claude.json`**, which every
 running session rewrites constantly. No LLM calls. No cost or token display: the
 data is right there, which is exactly why it needs saying — watching the meter
 changes how you work, and not for the better.
+
+## Development
+
+```sh
+uv run pytest        # 36 tests, ~0.2s
+```
+
+Tests cover the logic where a bug is silent and expensive: slug encoding,
+reconcile planning, the checks engine, and period arithmetic. Behaviour that
+depends on the real session store or a live tmux server was verified by
+observation instead — mocking an assumption you haven't tested just enshrines it.
 
 ## Licence
 

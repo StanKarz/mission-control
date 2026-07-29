@@ -2,7 +2,9 @@
 
     mc                          the TUI
     mc init                     write a starter config
-    mc recap [days]             work summary, printed; for shell startup
+    mc recap [days]             sessions, day by day
+    mc week [n]                 what happened this week (or n weeks ago)
+    mc month [n]                same, for a calendar month
     mc doctor                   session-store health; exit 1 if anything is stranded
     mc fix [--go]               relink stranded slugs to where projects now live
     mc mv <project> <dest>      move a project, carrying its sessions with it
@@ -50,6 +52,22 @@ def cmd_recap(days: int = 1) -> int:
             edits = sum(s.edits.values())
             print(f"  {s.started:%H:%M}–{s.ended:%H:%M}  {s.title or '(untitled)'}")
             print(f"          \033[2m{s.prompts} prompts · {edits} edits\033[0m")
+    store.flush()
+    return 0
+
+
+def cmd_report(period: str, back: int) -> int:
+    """What happened across every project in a week or a month."""
+    from . import report
+    cfg, store = config.load(), Store()
+    if period == "month":
+        start, end = report.month_bounds(back=back)
+        label = f"{start:%B %Y}"
+    else:
+        start, end = report.week_bounds(back=back)
+        label = "THIS WEEK" if back == 0 else f"{back} WEEK(S) AGO"
+    rep = report.build(cfg, store, start, end, label)
+    print(report.render(rep, colour=sys.stdout.isatty()))
     store.flush()
     return 0
 
@@ -413,6 +431,9 @@ def main() -> int:
             print("usage: mc resume <project> [--new-window] [--print]", file=sys.stderr)
             return 2
         return cmd_resume(argv[1], new_win, print_only)
+    if cmd in ("week", "month", "report"):
+        back = int(argv[1]) if len(argv) > 1 and argv[1].lstrip("-").isdigit() else 0
+        return cmd_report("month" if cmd == "month" else "week", abs(back))
     if cmd == "init":
         return cmd_init(go)
     if cmd == "brief":

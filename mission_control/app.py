@@ -187,7 +187,7 @@ class Roster(Screen):
 
     def action_checkpoint(self) -> None:
         from .modals import Checkpoint
-        self.app.push_screen(Checkpoint(self.cfg))
+        self.app.push_screen(Checkpoint(self.cfg, self.store))
 
     def action_retire(self) -> None:
         """Drop a finished project out of --resume. Moves, never deletes."""

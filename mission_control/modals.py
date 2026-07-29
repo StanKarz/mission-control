@@ -10,7 +10,7 @@ from textual.containers import Vertical, VerticalScroll
 from textual.screen import ModalScreen, Screen
 from textual.widgets import Static, TextArea
 
-from .render import AMBER, BG, CYAN, DIM, FAINT, FG, PANEL, RED, TEAL
+from .render import AMBER, BG, CYAN, DIM, FAINT, FG, GREEN, PANEL, TEAL
 
 
 class Confirm(ModalScreen[bool]):
@@ -88,15 +88,50 @@ class Checkpoint(Screen):
         height: 4; border: round {FAINT}; background: {PANEL};
     }}
     TextArea:focus {{ border: round {TEAL}; }}
+    #summary {{ padding: 1 0 0 0; }}
     #keys {{ padding: 1 0 0 0; }}
     """
 
     def __init__(self, cfg, store=None):
         super().__init__()
         self.cfg = cfg
+        self.store = store
         self.period = _period()
         self.editable = is_open()
         self.areas: list[TextArea] = []
+
+    def _summary(self) -> str:
+        """The month, from data. Most of what you'd ask yourself at month end —
+        what shipped, what was busiest, what went quiet — is already recorded,
+        so it should be shown rather than asked."""
+        if self.store is None:
+            return ""
+        from . import report
+        start, end = report.month_bounds()
+        rep = report.build(self.cfg, self.store, start, end, self.period)
+
+        out = [f"[{DIM}]THIS MONTH[/]",
+               f"  [{FG}]{rep.total_commits}[/][{DIM}] commits · [/]"
+               f"[{FG}]{rep.total_sessions}[/][{DIM}] sessions · [/]"
+               f"[{FG}]{len(rep.worked)}[/][{DIM}] project(s) touched[/]"]
+
+        if rep.worked:
+            out.append(f"\n[{DIM}]  most active[/]")
+            for r in rep.worked[:3]:
+                out.append(f"    [{FG}]{r.project.name:<24}[/]"
+                           f"[{FAINT}]{len(r.commits)}c · {len(r.sessions)}s[/]")
+        done = [r for r in rep.worked if r.checks_total and r.checks_passing == r.checks_total]
+        wip = [r for r in rep.worked if r.checks_total and r.checks_passing < r.checks_total]
+        if done:
+            out.append(f"\n[{GREEN}]  finished[/]  " +
+                       ", ".join(r.project.name for r in done))
+        if wip:
+            out.append(f"[{AMBER}]  unfinished[/]  " + ", ".join(
+                f"{r.project.name} ({r.checks_passing}/{r.checks_total})" for r in wip))
+        if rep.quiet:
+            out.append(f"[{DIM}]  quiet[/]  " +
+                       ", ".join(p.project.name for p in rep.quiet))
+        return "\n".join(out)
 
     def compose(self) -> ComposeResult:
         qs = self.cfg.questions
@@ -111,13 +146,17 @@ class Checkpoint(Screen):
                 f"[b {FG}]CHECKPOINT[/]  [{DIM}]{self.period}[/]   {state}\n"
                 f"[{FAINT}]{'━' * 68}[/]", id="title")
 
+            summary = self._summary()
+            if summary:
+                yield Static(summary, id="summary")
+
             if not qs:
                 yield Static(
-                    f"\n[{DIM}]No questions defined yet.[/]\n\n"
-                    f"[{FAINT}]Add them to [meta] in progress.toml:[/]\n\n"
-                    f"[{FAINT}]  checkpoint_questions = [\n"
-                    f"    \"...\",\n  ][/]", classes="q")
-                yield Static(f"\n[{FAINT}]esc back[/]", id="keys")
+                    f"\n[{DIM}]No written questions configured — the numbers above "
+                    f"are derived.[/]\n"
+                    f"[{FAINT}]Add prompts to checkpoint_questions in progress.toml "
+                    f"if you want to write anything down.[/]", classes="q")
+                yield Static(f"\n[{DIM}]esc back[/]", id="keys")
                 return
 
             for i, q in enumerate(qs):

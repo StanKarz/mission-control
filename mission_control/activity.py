@@ -52,6 +52,24 @@ def last_commit(repo: Path) -> Commit | None:
     return c
 
 
+def commits_between(repo: Path, since: date, until: date) -> list[Commit]:
+    """Commits authored in [since, until]. `until` is inclusive, so the git
+    boundary is pushed a day forward — `--until` is exclusive of the day's
+    later hours otherwise, and month-end commits silently vanish."""
+    out = _git(repo, "log",
+               f"--since={since.isoformat()}",
+               f"--until={(until + timedelta(days=1)).isoformat()}",
+               "--pretty=%h%x00%s%x00%ar%x00%cs", timeout=10)
+    if not out:
+        return []
+    commits = []
+    for line in out.strip().splitlines():
+        parts = line.split("\x00")
+        if len(parts) >= 3:
+            commits.append(Commit(sha=parts[0], subject=parts[1], when=parts[2]))
+    return commits
+
+
 def week_commits(repos: list[Path], days: int = 7) -> list[int]:
     """Commits per day, oldest first, ending today."""
     today = date.today()
