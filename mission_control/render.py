@@ -5,8 +5,12 @@ from __future__ import annotations
 BG      = "#16161e"
 PANEL   = "#1a1b26"
 FG      = "#c0caf5"
-DIM     = "#565f89"
-FAINT   = "#292e42"
+# Three tiers of secondary text, all required to stay legible on a dark
+# terminal. FAINT is chrome only — rules, empty bar tracks, empty sparklines —
+# and must never carry text; at #292e42 it was unreadable as a label.
+DIM     = "#9aa5ce"
+MUTED   = "#6b7398"
+FAINT   = "#343b58"
 CYAN    = "#7dcfff"
 BLUE    = "#7aa2f7"
 GREEN   = "#9ece6a"

@@ -10,7 +10,7 @@ from textual.containers import Vertical, VerticalScroll
 from textual.screen import ModalScreen, Screen
 from textual.widgets import Static, TextArea
 
-from .render import AMBER, BG, CYAN, DIM, FAINT, FG, GREEN, PANEL, TEAL
+from .render import AMBER, BG, CYAN, DIM, FAINT, FG, GREEN, MUTED, PANEL, TEAL
 
 
 class Confirm(ModalScreen[bool]):
@@ -121,7 +121,7 @@ class Checkpoint(Screen):
             out.append(f"\n[{DIM}]  most active[/]")
             for r in rep.worked[:3]:
                 out.append(f"    [{FG}]{r.project.name:<24}[/]"
-                           f"[{FAINT}]{len(r.commits)}c · {len(r.sessions)}s[/]")
+                           f"[{MUTED}]{len(r.commits)}c · {len(r.sessions)}s[/]")
         done = [r for r in rep.worked if r.checks_total and r.checks_passing == r.checks_total]
         wip = [r for r in rep.worked if r.checks_total and r.checks_passing < r.checks_total]
         if done:
@@ -156,7 +156,7 @@ class Checkpoint(Screen):
                 yield Static(
                     f"\n[{DIM}]No written questions configured — the numbers above "
                     f"are derived.[/]\n"
-                    f"[{FAINT}]Add prompts to checkpoint_questions in progress.toml "
+                    f"[{MUTED}]Add prompts to checkpoint_questions in progress.toml "
                     f"if you want to write anything down.[/]", classes="q")
                 yield Static(f"\n[{DIM}]esc back     q quit[/]", id="keys")
                 return

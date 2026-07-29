@@ -12,7 +12,8 @@ from textual.widgets import Digits, Static
 
 from . import activity, checks, config
 from .render import (
-    AMBER, BG, BLUE, CYAN, DIM, FAINT, FG, GREEN, MAGENTA, PANEL, RED, STATUS,
+    AMBER, BG, BLUE, CYAN, DIM, FAINT, FG, GREEN, MAGENTA, MUTED, PANEL, RED,
+    STATUS,
     TEAL, ago, bar, fit, heat, spark,
 )
 from .sessions import Store
@@ -24,6 +25,8 @@ class Roster(Screen):
     BINDINGS = [
         Binding("j,down", "move(1)", "down"),
         Binding("k,up", "move(-1)", "up"),
+        Binding("g,home", "goto(0)", "top", show=False),
+        Binding("G,end", "goto(-1)", "bottom", show=False),
         Binding("enter", "open", "open"),
         Binding("o", "resume", "resume"),
         Binding("w", "resume(True)", "new window"),
@@ -51,7 +54,9 @@ class Roster(Screen):
     def compose(self) -> ComposeResult:
         yield Static("", id="head")
         yield Static(f"[{FAINT}]{'━' * 68}[/]", id="rule")
-        yield VerticalScroll(id="list")
+        # can_focus=False: otherwise the container eats up/down as scroll
+        # keys and the selection never moves. Mouse wheel still works.
+        yield VerticalScroll(id="list", can_focus=False)
         yield Static("", id="foot")
 
     def on_mount(self) -> None:
@@ -86,11 +91,14 @@ class Roster(Screen):
         self._chrome()
         self.store.flush()
 
-    def _repaint(self) -> None:
+    def _repaint(self, scroll: bool = False) -> None:
         """Update row text in place, without touching the widget tree."""
-        for i, (p, w) in enumerate(zip(self.rows, getattr(self, "row_widgets", []))):
+        widgets = getattr(self, "row_widgets", [])
+        for i, (p, w) in enumerate(zip(self.rows, widgets)):
             w.update(self._row(p, i == self.index))
             w.set_class(i == self.index, "sel")
+        if scroll and 0 <= self.index < len(widgets):
+            widgets[self.index].scroll_visible(animate=False)
         self._chrome()
 
     def _row(self, p: config.Project, sel: bool) -> str:
@@ -127,7 +135,7 @@ class Roster(Screen):
             note = f"   [{MAGENTA}]blocked[/]"
         line2 = (
             f"   [{DIM}]{fit(p.phase or p.status, 20)}[/]"
-            f"[{FAINT}]{cnt:>5} checks[/][{DIM}]{ago(touched):>11}[/]{note}"
+            f"[{MUTED}]{cnt:>5} checks[/][{DIM}]{ago(touched):>11}[/]{note}"
         )
         return f"{line1}\n{line2}"
 
@@ -153,7 +161,7 @@ class Roster(Screen):
                             touched[q.name] = touched.get(q.name, 0) + k
                             break
         line = "  ".join(
-            f"[{FG}]{k}[/][{FAINT}] {v}e[/]" for k, v in
+            f"[{FG}]{k}[/][{MUTED}] {v}e[/]" for k, v in
             sorted(touched.items(), key=lambda kv: -kv[1])[:4]
         ) or f"[{DIM}]nothing yet[/]"
         stranded = sum(1 for p in self.rows if not p.exists)
@@ -174,7 +182,12 @@ class Roster(Screen):
         if not self.rows:
             return
         self.index = (self.index + delta) % len(self.rows)
-        self._repaint()
+        self._repaint(scroll=True)
+
+    def action_goto(self, where: int) -> None:
+        if self.rows:
+            self.index = 0 if where == 0 else len(self.rows) - 1
+            self._repaint(scroll=True)
 
     def action_open(self) -> None:
         if self.rows:
@@ -295,7 +308,7 @@ class Detail(Screen):
         colour, dot = STATUS.get(p.status if p.exists else "stranded", (DIM, "○"))
         with Vertical(id="wrap"):
             yield Static(
-                f"[{FAINT}]◂ {self.idx + 1}/{self.total}[/]  [b {FG}]{p.name}[/]  "
+                f"[{MUTED}]◂ {self.idx + 1}/{self.total}[/]  [b {FG}]{p.name}[/]  "
                 f"[{colour}]{dot} {p.status}[/]"
                 f"[{DIM}]   {str(p.path).replace(str(p.path.home()), '~')}[/]\n"
                 f"[{FAINT}]{'━' * 68}[/]", id="title")
@@ -327,7 +340,7 @@ class Detail(Screen):
                     mark, mc, nc = "○", DIM, DIM
                 val = c.value or ("done" if c.done else "not done")
                 lines.append(f"  [{mc}]{mark}[/] [{nc}]{fit(c.name, 18)}[/] "
-                             f"[{FAINT}]{fit(c.type, 8)}[/][{DIM}]{val}[/]")
+                             f"[{MUTED}]{fit(c.type, 8)}[/][{DIM}]{val}[/]")
             body = "\n".join(lines) or f"  [{DIM}]no checks defined — run /init-project[/]"
             if nxt:
                 body += (f"\n\n  [{RED}]▸[/] [b {FG}]next[/]  [{FG}]{nxt.name}[/] "
@@ -337,21 +350,25 @@ class Detail(Screen):
             wk = self.store.week(str(p.path), p.aliases)
             cm = activity.week_commits(p.repos)
             lc = activity.last_commit(p.path)
-            week = (f"[{DIM}]ACTIVITY[/]     [{FAINT}]M T W T F S S[/]\n"
+            # Floor the scale, as the roster does. Without it a week of one
+            # session a day is seven equal values, every bar renders at max,
+            # and a quiet week is indistinguishable from a frantic one.
+            hi = max(4, max(wk, default=0), max(cm, default=0))
+            week = (f"[{DIM}]ACTIVITY[/]     [{MUTED}]M T W T F S S[/]\n"
                     f"[{DIM}]  commits[/]     {heat(cm)}    "
-                    f"[{FAINT}]week[/] {spark(cm)} [{FG}]{sum(cm)}[/]\n"
+                    f"[{MUTED}]week[/] {spark(cm, hi=hi)} [{FG}]{sum(cm)}[/]\n"
                     f"[{DIM}] sessions[/]     {heat(wk)}    "
-                    f"[{FAINT}]week[/] {spark(wk, TEAL)} [{FG}]{sum(wk)}[/]")
+                    f"[{MUTED}]week[/] {spark(wk, TEAL, hi=hi)} [{FG}]{sum(wk)}[/]")
             if lc:
                 week += (f"\n\n  [{BLUE}]▸[/] [{FG}]{lc.sha}[/]  {fit(lc.subject, 34)}"
                          f"[{DIM}]{lc.when:>12}[/]\n"
-                         f"    [{FAINT}]{lc.files} files  +{lc.added} −{lc.removed}[/]")
+                         f"    [{MUTED}]{lc.files} files  +{lc.added} −{lc.removed}[/]")
             yield Static(week, id="week")
 
             recents = self.store.recent(str(p.path), p.aliases)
             rl = "\n".join(
-                f"  [{FAINT}]{s.ended:%a %H:%M}[/]  [{FG}]{fit(s.title or '(untitled)', 34)}[/]"
-                f"[{FAINT}]{s.prompts:>4}p · {sum(s.edits.values())}e[/]"
+                f"  [{MUTED}]{s.ended:%a %H:%M}[/]  [{FG}]{fit(s.title or '(untitled)', 34)}[/]"
+                f"[{MUTED}]{s.prompts:>4}p · {sum(s.edits.values())}e[/]"
                 for s in recents if s.ended
             ) or f"  [{DIM}]no sessions yet[/]"
             yield Static(f"[{DIM}]RECENT SESSIONS[/]\n{rl}", id="recent")

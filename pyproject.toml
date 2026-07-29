@@ -1,6 +1,6 @@
 [project]
 name = "mission-control"
-version = "0.1.0"
+version = "0.1.1"
 description = "A Textual TUI for Claude Code: repair orphaned sessions, track measurable progress, and launch work from the pane next door."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -37,4 +37,8 @@ packages = ["mission_control"]
 [dependency-groups]
 dev = [
     "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
 ]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
