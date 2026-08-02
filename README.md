@@ -187,7 +187,7 @@ checkpoint_questions = ["What did I ship?", "What did I avoid?"]
 
 [projects."orbital-sim"]
 path   = "~/projects/orbital-sim"
-status = "active"                       # active|blocked|done|archived|ignored
+status = "active"   # active | blocked | paused | done | archived | ignored
 phase  = "phase 2 — baselines"
 desc   = "what this is, in one line"    # optional, shown on the selected row
 ```

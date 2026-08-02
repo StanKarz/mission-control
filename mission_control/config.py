@@ -22,7 +22,9 @@ def _default_config_path() -> Path:
 PATH = Path(os.environ["MC_CONFIG"]).expanduser() if os.environ.get("MC_CONFIG") \
     else _default_config_path()
 
-VALID_STATUS = ("active", "blocked", "done", "archived", "ignored")
+# "paused" and "archived" are deliberately different: paused work is coming
+# back and stays on the roster, archived work is filed away and does not.
+VALID_STATUS = ("active", "blocked", "paused", "done", "archived", "ignored")
 
 # Used when [meta] says nothing. Deliberately conservative: one root, and no
 # assumptions about anyone's home directory layout beyond it.

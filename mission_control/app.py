@@ -19,7 +19,8 @@ from .render import (
 )
 from .sessions import Store
 
-ORDER = {"active": 0, "blocked": 1, "done": 2, "archived": 3, "ignored": 4}
+ORDER = {"active": 0, "blocked": 1, "paused": 2, "done": 3,
+         "archived": 4, "ignored": 5}
 
 
 class Roster(Screen):
@@ -76,7 +77,9 @@ class Roster(Screen):
     def refresh_data(self) -> None:
         """Full rebuild: config reloaded, row widgets remounted."""
         self.cfg = config.load()
-        live = {"active", "blocked"}
+        # paused work is still yours — it belongs on the roster, just
+        # visually quieter. Only finished/filed work hides behind `a`.
+        live = {"active", "blocked", "paused"}
         candidates = [p for p in self.cfg.projects if p.visible]
         self.hidden_count = sum(1 for p in candidates if p.status not in live)
         self.rows = sorted(
@@ -142,6 +145,8 @@ class Roster(Screen):
             note = f"   [{AMBER}]path missing[/]"
         elif p.status == "blocked":
             note = f"   [{MAGENTA}]blocked[/]"
+        elif p.status == "paused":
+            note = f"   [{MUTED}]paused[/]"
         line2 = (
             f"   [{DIM}]{fit(p.phase or p.status, 20)}[/]"
             f"[{MUTED}]{cnt:>5} checks[/][{DIM}]{ago(touched):>11}[/]{note}"

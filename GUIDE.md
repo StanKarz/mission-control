@@ -156,10 +156,16 @@ deleted; moving the directory back restores it.
 | status | meaning | on the roster? |
 |---|---|---|
 | `active` | working on it | yes |
-| `blocked` | waiting on something external | yes |
+| `blocked` | waiting on something external (a PR, a review) | yes |
+| `paused` | not touching it now, but coming back | yes, quieter |
 | `done` | finished | behind `a` |
-| `archived` | parked, may resume | behind `a` |
+| `archived` | filed away, not coming back soon | behind `a` |
 | `ignored` | not a project at all | never |
+
+**`paused` vs `archived`** is the distinction worth getting right. Paused work
+is still yours — it stays on the roster so you don't forget it exists, just
+rendered quietly and sorted below live work. Archived work is filed away and
+only appears under `a`.
 
 `ignored` still keeps its sessions *tracked*, so `doctor` won't report them as
 orphans. That's the difference between "stop showing me this" and "this was

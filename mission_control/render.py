@@ -23,6 +23,7 @@ TEAL    = "#73daca"
 STATUS = {
     "active":   (TEAL,    "●"),
     "blocked":  (MAGENTA, "◐"),
+    "paused":   (MUTED,   "❙"),
     "stranded": (AMBER,   "▲"),
     "done":     (BLUE,    "✦"),
     "archived": (DIM,     "○"),

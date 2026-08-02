@@ -41,13 +41,18 @@ phase = "awaiting review"
 [projects."gamma"]
 path = "{root}/gamma"
 status = "archived"
+
+[projects."delta"]
+path = "{root}/delta"
+status = "paused"
+phase = "on ice"
 """
 
 
 @pytest.fixture
 def app(tmp_path, monkeypatch):
     root = tmp_path / "projects"
-    for name in ("alpha", "beta", "gamma"):
+    for name in ("alpha", "beta", "gamma", "delta"):
         (root / name).mkdir(parents=True)
     (root / "alpha" / "README.md").write_text("hi")
 
@@ -76,7 +81,9 @@ async def test_roster_hides_finished_and_parked_work_by_default(app):
     should be on screen; the rest is one keypress away."""
     async with app.run_test(size=(76, 30)) as pilot:
         await pilot.pause()
-        assert [p.name for p in app.screen.rows] == ["alpha", "beta"]
+        # delta is paused: still yours, so still on the roster.
+        # gamma is archived: filed away, so not.
+        assert [p.name for p in app.screen.rows] == ["alpha", "beta", "delta"]
         assert app.screen.hidden_count == 1
 
 
@@ -85,10 +92,10 @@ async def test_a_reveals_everything(app):
         await pilot.pause()
         await pilot.press("a")
         await pilot.pause()
-        assert [p.name for p in app.screen.rows] == ["alpha", "beta", "gamma"]
+        assert [p.name for p in app.screen.rows] == ["alpha", "beta", "delta", "gamma"]
         await pilot.press("a")
         await pilot.pause()
-        assert [p.name for p in app.screen.rows] == ["alpha", "beta"]
+        assert [p.name for p in app.screen.rows] == ["alpha", "beta", "delta"]
 
 
 async def test_detail_renders_for_every_project(app):
