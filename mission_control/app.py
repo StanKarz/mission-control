@@ -335,11 +335,19 @@ class Roster(Screen):
         self.app.push_screen(Confirm(f"Retire {p.name}?", detail), done)
 
     def action_resume(self, new_window: bool = False) -> None:
-        if self.rows:
-            resume(self, self.rows[self.index], self.store, new_window)
+        """Launch the project, then show its detail.
+
+        Once you have picked something to work on, the roster's job is done and
+        the pane should be that project's dashboard — its checks, commits and
+        sessions — rather than the list you just chose from. `esc` goes back.
+        """
+        if not self.rows:
+            return
+        if resume(self, self.rows[self.index], self.store, new_window):
+            self.action_open()
 
 
-def resume(screen, p, store, new_window: bool = False) -> None:
+def resume(screen, p, store, new_window: bool = False) -> bool:
     """Start or resume a project in the other tmux pane.
 
     Shared by both screens. Never raises into the UI — every failure becomes a
@@ -350,7 +358,7 @@ def resume(screen, p, store, new_window: bool = False) -> None:
 
     if not p.path.is_dir():
         screen.notify(f"{p.name}: path missing", severity="error")
-        return
+        return False
 
     recent = store.recent(str(p.path), p.aliases, limit=1)
     sid = recent[0].session_id if recent else None
@@ -361,20 +369,29 @@ def resume(screen, p, store, new_window: bool = False) -> None:
         ok, msg = launcher.new_window(p.path, launcher.resume_argv(sid), name=p.name)
         screen.notify(f"{verb} {p.name} — {msg}" if ok else msg,
                       severity="information" if ok else "error")
-        return
+        return ok
 
     target = launcher.resolve_target()
     if target.usable:
         ok, msg = launcher.send(target, cmd)
         screen.notify(f"{verb} {p.name} in {target.pane}" if ok else msg,
                       severity="information" if ok else "error")
-        return
+        return ok
+
+    if target.can_split:
+        # Alone in the window: build the layout rather than refusing. Work goes
+        # to the left, the roster keeps the right.
+        ok, msg = launcher.split_for_work(p.path, launcher.resume_argv(sid))
+        screen.notify(f"{verb} {p.name} — {msg}" if ok else msg,
+                      severity="information" if ok else "error")
+        return ok
 
     # Busy or unresolvable: say why, put the command somewhere useful, and point
     # at the escape hatch rather than silently doing nothing.
     hint = "press w for a new window" if launcher.in_tmux() else "command copied"
     launcher.copy(cmd)
     screen.notify(f"{target.problem} — {hint}", severity="warning", timeout=8)
+    return False
 
 
 class Detail(Screen):

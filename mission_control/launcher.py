@@ -52,34 +52,106 @@ class Target:
     pane: str | None = None
     command: str | None = None      # foreground command in that pane
     problem: str | None = None      # human-readable reason it can't be used
+    reason: str = ""                # "no-tmux" | "no-pane" | "self" | "busy"
 
     @property
     def usable(self) -> bool:
         return self.pane is not None and self.problem is None
 
+    @property
+    def can_split(self) -> bool:
+        """No neighbour to send to, but we are in tmux — so make one."""
+        return self.reason == "no-pane"
+
+
+def _neighbour_left() -> str | None:
+    """The pane immediately left of *this* one, computed from geometry.
+
+    tmux resolves relative targets like ``{left-of}`` against the session's
+    **active** pane, not the pane whose process is asking. Those are usually
+    the same — you press a key in the pane you are looking at — but not always:
+    after this app opens a work pane, focus moves there, and a later query from
+    the roster would then be answered relative to the wrong pane (and can wrap
+    around to the far edge, pointing back at the roster itself).
+
+    Reading the layout and picking the nearest pane whose right edge touches
+    ours removes that ambiguity entirely.
+    """
+    me = os.environ.get("TMUX_PANE")
+    if not me:
+        return None
+    rc, out = _tmux("list-panes", "-t", me,
+                    "-F", "#{pane_id} #{pane_left} #{pane_right} #{pane_top} #{pane_bottom}")
+    if rc != 0:
+        return None
+    geo: dict[str, tuple[int, int, int, int]] = {}
+    for line in out.splitlines():
+        bits = line.split()
+        if len(bits) == 5:
+            try:
+                geo[bits[0]] = tuple(int(b) for b in bits[1:])  # type: ignore[assignment]
+            except ValueError:
+                continue
+    if me not in geo:
+        return None
+    my_left, _, my_top, my_bottom = geo[me]
+    best = None
+    for pid, (_, right, top, bottom) in geo.items():
+        if pid == me or right >= my_left:
+            continue
+        if bottom < my_top or top > my_bottom:      # no vertical overlap
+            continue
+        if best is None or right > geo[best][1]:    # nearest wins
+            best = pid
+    return best
+
 
 def resolve_target(spec: str | None = None) -> Target:
     """Find the pane to send work to, and decide whether it's safe to."""
     if not in_tmux():
-        return Target(problem="not running inside tmux")
+        return Target(problem="not running inside tmux", reason="no-tmux")
 
     spec = spec or os.environ.get("MC_TARGET_PANE") or DEFAULT_TARGET
 
-    rc, out = _tmux("display-message", "-p", "-t", spec, "#{pane_id}")
-    # Emptiness, not exit status — see module docstring (2).
-    if rc != 0 or not out or not out.startswith("%"):
-        return Target(problem=f"no pane matches {spec!r} (single pane window?)")
-
-    pane = out
+    if spec == DEFAULT_TARGET:
+        pane = _neighbour_left()
+        if not pane:
+            return Target(problem="no pane to the left", reason="no-pane")
+    else:
+        rc, out = _tmux("display-message", "-p", "-t", spec, "#{pane_id}")
+        # Emptiness, not exit status — see module docstring (2).
+        if rc != 0 or not out or not out.startswith("%"):
+            return Target(problem=f"no pane matches {spec!r}", reason="no-pane")
+        pane = out
     if pane == os.environ.get("TMUX_PANE"):
-        return Target(pane=pane, problem="target resolves to this pane")
+        return Target(pane=pane, problem="target resolves to this pane", reason="self")
 
     rc, cmd = _tmux("display-message", "-p", "-t", pane, "#{pane_current_command}")
     cmd = cmd if rc == 0 else ""
     if cmd and cmd not in SHELLS:
-        return Target(pane=pane, command=cmd,
+        return Target(pane=pane, command=cmd, reason="busy",
                       problem=f"{cmd} is running there — keys would go to it, not a shell")
     return Target(pane=pane, command=cmd or None)
+
+
+def split_for_work(path: Path, command: str, width: str = "60%") -> tuple[bool, str]:
+    """Open a work pane to the *left* of the roster and run `command` in it.
+
+    For when the roster is alone in its window: rather than refusing, build the
+    layout the app assumes — work on the left, roster on the right. ``-b`` puts
+    the new pane before the current one, so the roster keeps the right-hand
+    side and does not have to move.
+
+    Focus follows the new pane (no ``-d``), because pressing this key means you
+    intend to start working there. When the command exits, tmux closes the pane
+    and the roster gets the full width back.
+    """
+    if not in_tmux():
+        return False, "not running inside tmux"
+    rc, out = _tmux("split-window", "-h", "-b", "-l", width,
+                    "-c", str(path), command)
+    return (rc == 0), ("opened a pane to the left" if rc == 0
+                       else out or "split-window failed")
 
 
 def resume_argv(session_id: str | None) -> str:

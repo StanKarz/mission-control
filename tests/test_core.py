@@ -324,3 +324,97 @@ def test_merge_drops_a_redundant_prefix_and_removes_the_empty_dir(tmp_path, monk
     assert ok, log
     assert (dst / name).read_text() == full
     assert not src.exists(), "stale slug dir should be gone once redundant"
+
+
+# ── tmux target resolution ───────────────────────────────────────────────
+def _fake_tmux(layout: str, extra: dict | None = None):
+    """Stand in for the tmux binary, returning a fixed pane layout."""
+    extra = extra or {}
+    def run(*args, timeout=5):
+        if args[0] == "list-panes":
+            return 0, layout
+        if args[0] == "display-message":
+            for k, v in extra.items():
+                if k in args:
+                    return 0, v
+            return 0, ""
+        return 0, ""
+    return run
+
+
+def test_neighbour_left_is_geometry_not_focus(monkeypatch):
+    """tmux resolves {left-of} against the *active* pane, which is not always
+    the pane asking — after opening a work pane, focus moves there, and the
+    query can wrap around to point back at the roster itself."""
+    from mission_control import launcher
+    layout = "\n".join([
+        "%1 0 108 0 44",       # left pane
+        "%2 109 179 0 44",     # roster, right
+    ])
+    monkeypatch.setenv("TMUX", "1")
+    monkeypatch.setenv("TMUX_PANE", "%2")
+    monkeypatch.setattr(launcher, "_tmux", _fake_tmux(layout))
+    assert launcher._neighbour_left() == "%1"
+
+
+def test_no_neighbour_when_alone_in_the_window(monkeypatch):
+    from mission_control import launcher
+    monkeypatch.setenv("TMUX", "1")
+    monkeypatch.setenv("TMUX_PANE", "%1")
+    monkeypatch.setattr(launcher, "_tmux", _fake_tmux("%1 0 179 0 44"))
+    assert launcher._neighbour_left() is None
+
+    t = launcher.resolve_target()
+    assert t.reason == "no-pane"
+    assert t.can_split, "alone in the window means build the layout, not refuse"
+
+
+def test_stacked_panes_are_not_left_neighbours(monkeypatch):
+    """A pane above or below shares no vertical span, so it is not 'to the
+    left' however its columns happen to line up."""
+    from mission_control import launcher
+    layout = "\n".join([
+        "%1 0 179 0 21",       # full-width, above
+        "%2 0 179 22 44",      # full-width, below (us)
+    ])
+    monkeypatch.setenv("TMUX", "1")
+    monkeypatch.setenv("TMUX_PANE", "%2")
+    monkeypatch.setattr(launcher, "_tmux", _fake_tmux(layout))
+    assert launcher._neighbour_left() is None
+
+
+def test_nearest_left_pane_wins(monkeypatch):
+    from mission_control import launcher
+    layout = "\n".join([
+        "%1 0 49 0 44",
+        "%2 50 108 0 44",      # nearer to us
+        "%3 109 179 0 44",     # us
+    ])
+    monkeypatch.setenv("TMUX", "1")
+    monkeypatch.setenv("TMUX_PANE", "%3")
+    monkeypatch.setattr(launcher, "_tmux", _fake_tmux(layout))
+    assert launcher._neighbour_left() == "%2"
+
+
+def test_busy_neighbour_is_refused_not_split(monkeypatch):
+    """Splitting again on every press would fragment the window."""
+    from mission_control import launcher
+    layout = "%1 0 108 0 44\n%2 109 179 0 44"
+    monkeypatch.setenv("TMUX", "1")
+    monkeypatch.setenv("TMUX_PANE", "%2")
+    monkeypatch.setattr(launcher, "_tmux",
+                        _fake_tmux(layout, {"#{pane_current_command}": "claude"}))
+    t = launcher.resolve_target()
+    assert t.pane == "%1"
+    assert t.reason == "busy" and not t.usable and not t.can_split
+
+
+def test_idle_shell_neighbour_is_usable(monkeypatch):
+    from mission_control import launcher
+    layout = "%1 0 108 0 44\n%2 109 179 0 44"
+    monkeypatch.setenv("TMUX", "1")
+    monkeypatch.setenv("TMUX_PANE", "%2")
+    monkeypatch.setattr(launcher, "_tmux",
+                        _fake_tmux(layout, {"#{pane_current_command}": "zsh"}))
+    t = launcher.resolve_target()
+    assert t.pane == "%1" and t.usable

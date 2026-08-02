@@ -196,3 +196,59 @@ async def test_c_runs_slow_checks_and_caches_the_result(app, tmp_path):
     assert checks.cached(alpha)["always ok"] is True
     assert checks.progress(alpha)[0] == 2, "cached slow result must count"
     assert checks.cached_at(alpha) is not None
+
+
+async def test_o_builds_the_layout_when_the_roster_is_alone(app, monkeypatch):
+    """Pressing resume in a single-pane window should create the work pane,
+    not refuse. Refusing was the reported bug."""
+    from mission_control import launcher
+    calls = []
+    monkeypatch.setattr(launcher, "resolve_target",
+                        lambda spec=None: launcher.Target(
+                            problem="no pane to the left", reason="no-pane"))
+    monkeypatch.setattr(launcher, "split_for_work",
+                        lambda path, cmd, width="60%": (
+                            calls.append((str(path), cmd)), (True, "opened"))[1])
+    monkeypatch.setattr(launcher, "send",
+                        lambda t, c: (_ for _ in ()).throw(
+                            AssertionError("must not send to a pane that isn't there")))
+
+    async with app.run_test(size=(76, 30)) as pilot:
+        await pilot.pause()
+        await pilot.press("o")
+        await pilot.pause()
+        assert len(calls) == 1, "no work pane was created"
+        path, cmd = calls[0]
+        assert path.endswith("alpha")
+        assert cmd.startswith("claude")
+
+
+async def test_o_drills_into_the_project_after_launching(app, monkeypatch):
+    from mission_control import launcher
+    monkeypatch.setattr(launcher, "resolve_target",
+                        lambda spec=None: launcher.Target(pane="%9", command="zsh"))
+    monkeypatch.setattr(launcher, "send", lambda t, c: (True, "sent"))
+    async with app.run_test(size=(76, 30)) as pilot:
+        await pilot.pause()
+        await pilot.press("o")
+        await pilot.pause()
+        assert type(app.screen).__name__ == "Detail"
+
+
+async def test_a_busy_neighbour_neither_sends_nor_splits(app, monkeypatch):
+    from mission_control import launcher
+    monkeypatch.setattr(launcher, "resolve_target",
+                        lambda spec=None: launcher.Target(
+                            pane="%9", command="claude", reason="busy",
+                            problem="claude is running there"))
+    monkeypatch.setattr(launcher, "send",
+                        lambda t, c: (_ for _ in ()).throw(
+                            AssertionError("would inject a prompt into Claude")))
+    monkeypatch.setattr(launcher, "split_for_work",
+                        lambda *a, **k: (_ for _ in ()).throw(
+                            AssertionError("would fragment the window")))
+    async with app.run_test(size=(76, 30)) as pilot:
+        await pilot.pause()
+        await pilot.press("o")
+        await pilot.pause()
+        assert type(app.screen).__name__ == "Roster"

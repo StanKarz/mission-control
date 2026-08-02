@@ -118,8 +118,16 @@ work        # splits tmux: work on the left, roster on the right
 ```
 
 Glance at the roster. The highlighted row tells you the next unmet check.
-Press `o` to resume that project in the left pane. During a long run, the roster
-shows `◆ working 4m` or `◆ needs you`.
+Press `o` to resume that project — and the roster switches to that project's
+detail, so the right-hand pane becomes its dashboard. `esc` goes back.
+
+`o` builds the layout if it needs to. Running `mc` alone in a window? It opens a
+work pane to the *left* at 60% and keeps itself on the right. If a left pane
+already exists and is an idle shell, it types there instead. If Claude is
+already running there it refuses — keystrokes would be submitted as a *prompt* —
+and `w` opens a new window instead.
+
+During a long run, the roster shows `◆ working 4m` or `◆ needs you`.
 
 When you've done something a `cmd` check measures, press `c`. `path`, `git_tag`
 and `manual` checks update by themselves.
@@ -230,6 +238,12 @@ silently dropped — no error, just nothing. `mc brief --hook` emits the correct
 running in the target pane, a resume command typed there is submitted as a
 *prompt*, not executed. `mc` checks `pane_current_command` against a shell
 allowlist and refuses otherwise, offering `w` instead.
+
+**11a. tmux resolves `{left-of}` against the _active_ pane, not the asking
+one.** Usually the same pane, but not after `o` moves focus to the new work
+pane — a later query then answers relative to the wrong pane, and can wrap
+around to point back at the roster itself. `mc` reads the pane layout and picks
+the nearest pane whose right edge touches its own, which has no such ambiguity.
 
 **12. `uv tool install --force` can silently do nothing.** It skips the rebuild
 when the version string is unchanged, so a "reinstall" leaves the old code in
