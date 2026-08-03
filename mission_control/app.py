@@ -32,6 +32,7 @@ class Roster(Screen):
         Binding("enter", "open", "open"),
         Binding("o", "resume", "resume"),
         Binding("w", "resume(True)", "new window"),
+        Binding("s", "set_status", "status"),
         Binding("x", "retire", "retire"),
         Binding("c", "run_checks", "run checks"),
         Binding("a", "toggle_all", "show all"),
@@ -243,7 +244,7 @@ class Roster(Screen):
             health.append(f"[{MUTED}]showing all — a[/]")
         self.query_one("#foot", Static).update(
             f"[{DIM}]TODAY[/]    {line}\n\n" + "   ".join(health) +
-            f"\n\n[{DIM}]⏎ open   o resume   c run checks   a all   "
+            f"\n\n[{DIM}]⏎ open   o resume   c checks   s status   a all   "
             f"m month   x retire   q quit[/]"
         )
 
@@ -302,6 +303,24 @@ class Roster(Screen):
     def action_checkpoint(self) -> None:
         from .modals import Checkpoint
         self.app.push_screen(Checkpoint(self.cfg, self.store))
+
+    def action_set_status(self) -> None:
+        """Change status without touching sessions — the other half of `x`."""
+        from .modals import StatusPicker
+        if not self.rows:
+            return
+        p = self.rows[self.index]
+
+        def chosen(status: str | None) -> None:
+            if not status or status == p.status:
+                return
+            self.cfg.set_status(p.name, status)
+            config.save(self.cfg)
+            self.notify(f"{p.name} → {status}")
+            # It may have just left the default view; keep the cursor in range.
+            self.refresh_data()
+
+        self.app.push_screen(StatusPicker(p), chosen)
 
     def action_retire(self) -> None:
         """Drop a finished project out of --resume. Moves, never deletes."""

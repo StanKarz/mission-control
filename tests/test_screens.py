@@ -291,3 +291,50 @@ def test_mc_add_adopts_an_existing_directory(tmp_path, monkeypatch):
     assert [p.name for p in cfg.projects] == ["legacy"]
     assert cmd_add(str(root / "legacy")) == 2, "must not add the same dir twice"
     assert cmd_add(str(root / "nope")) == 2, "must reject a missing directory"
+
+
+async def test_s_changes_status_without_touching_sessions(app, monkeypatch):
+    """`x` couples retire and done. `s` is the other half: say what a project
+    *is* without archiving anything."""
+    from mission_control import config, reconcile
+    monkeypatch.setattr(reconcile, "retire",
+                        lambda *a, **k: (_ for _ in ()).throw(
+                            AssertionError("status change must not retire")))
+    async with app.run_test(size=(76, 30)) as pilot:
+        await pilot.pause()
+        r = app.screen
+        assert r.rows[0].name == "alpha" and r.rows[0].status == "active"
+        await pilot.press("s")
+        await pilot.pause()
+        assert type(app.screen).__name__ == "StatusPicker"
+        await pilot.press("4")            # done
+        await pilot.pause()
+        assert config.load().projects[0].status == "done"
+
+
+async def test_status_picker_cancels_cleanly(app):
+    from mission_control import config
+    async with app.run_test(size=(76, 30)) as pilot:
+        await pilot.pause()
+        await pilot.press("s")
+        await pilot.pause()
+        await pilot.press("escape")
+        await pilot.pause()
+        assert type(app.screen).__name__ == "Roster"
+        assert config.load().projects[0].status == "active", "cancel must not write"
+
+
+async def test_marking_done_removes_it_from_the_default_view(app):
+    from mission_control import config
+    async with app.run_test(size=(76, 30)) as pilot:
+        await pilot.pause()
+        r = app.screen
+        assert "alpha" in [p.name for p in r.rows]
+        await pilot.press("s")
+        await pilot.pause()
+        await pilot.press("4")            # done
+        await pilot.pause()
+        assert "alpha" not in [p.name for p in app.screen.rows]
+        await pilot.press("a")            # ...but still there under `a`
+        await pilot.pause()
+        assert "alpha" in [p.name for p in app.screen.rows]

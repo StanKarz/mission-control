@@ -185,3 +185,83 @@ class Checkpoint(Screen):
         _config.save(self.cfg)
         n = sum(1 for a in answers if a)
         self.notify(f"saved {n}/{len(answers)} answers for {self.period}")
+
+
+STATUS_HELP = {
+    "active":   "working on it now",
+    "blocked":  "waiting on something external",
+    "paused":   "not now, but coming back",
+    "done":     "finished",
+    "archived": "filed away",
+    "ignored":  "not a project — hide entirely",
+}
+# Which statuses stay on the default roster. Mirrors Roster.refresh_data.
+ON_ROSTER = ("active", "blocked", "paused")
+
+
+class StatusPicker(ModalScreen[str]):
+    """Change a project's status without retiring its sessions.
+
+    `x` couples the two — it archives the session directories *and* marks the
+    project done — which is right when you are finished with a project, but
+    leaves no way to say merely "this is done now" or "I'm pausing this".
+    """
+
+    BINDINGS = [
+        Binding("escape,q", "cancel", "cancel", priority=True),
+        Binding("j,down", "move(1)", "down", priority=True),
+        Binding("k,up", "move(-1)", "up", priority=True),
+        Binding("enter", "choose", "choose", priority=True),
+    ]
+    CSS = f"""
+    StatusPicker {{ align: center middle; }}
+    #box {{
+        width: 62; height: auto; padding: 1 3;
+        background: {PANEL}; border: round {CYAN};
+    }}
+    #title {{ padding-bottom: 1; }}
+    """
+
+    def __init__(self, project):
+        super().__init__()
+        self.p = project
+        self.options = list(STATUS_HELP)
+        self.cursor = (self.options.index(project.status)
+                       if project.status in self.options else 0)
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="box"):
+            yield Static(f"[b {FG}]{self.p.name}[/]  [{DIM}]status[/]", id="title")
+            yield Static("", id="opts")
+            yield Static(f"\n[{MUTED}]1–3 stay on the roster · 4–6 move behind `a`[/]\n"
+                         f"[{DIM}]1–6 pick   ⏎ choose   esc cancel[/]")
+
+    def on_mount(self) -> None:
+        self._paint()
+
+    def _paint(self) -> None:
+        lines = []
+        for i, s in enumerate(self.options):
+            sel = i == self.cursor
+            mark = f"[{CYAN}]▸[/]" if sel else " "
+            name = f"[b {FG}]{s}[/]" if sel else f"[{FG}]{s}[/]"
+            pad = " " * (10 - len(s))
+            here = f"  [{TEAL}]← now[/]" if s == self.p.status else ""
+            lines.append(f" {mark} [{MUTED}]{i + 1}[/] {name}{pad}"
+                         f"[{DIM}]{STATUS_HELP[s]}[/]{here}")
+        self.query_one("#opts", Static).update("\n".join(lines))
+
+    def action_move(self, delta: int) -> None:
+        self.cursor = (self.cursor + delta) % len(self.options)
+        self._paint()
+
+    def action_choose(self) -> None:
+        self.dismiss(self.options[self.cursor])
+
+    def action_cancel(self) -> None:
+        self.dismiss("")
+
+    def on_key(self, event) -> None:
+        if event.key.isdigit() and 1 <= int(event.key) <= len(self.options):
+            event.stop()
+            self.dismiss(self.options[int(event.key) - 1])

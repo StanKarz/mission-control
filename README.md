@@ -227,7 +227,8 @@ dropped. `mc brief --hook` emits it correctly.)
 | `j` / `k` / arrows | move · on the detail screen, expand a check, commit or session |
 | `g` / `G` | jump to top / bottom |
 | `o` / `w` | resume in the left pane / in a new window |
-| `x` | retire (confirm first) |
+| `s` | change status — active, blocked, paused, done, archived, ignored |
+| `x` | retire: mark done *and* archive its sessions (confirm first) |
 | `c` | run this project's `cmd` / `gh_pr` checks |
 | `a` | show finished and parked projects too (hidden by default) |
 | `m` | month checkpoint: the month so far, plus any written prompts |
@@ -247,7 +248,7 @@ changes how you work, and not for the better.
 ## Development
 
 ```sh
-uv run pytest        # 67 tests, ~5s
+uv run pytest        # 70 tests, ~5s
 ```
 
 Tests cover the logic where a bug is silent and expensive: slug encoding,
