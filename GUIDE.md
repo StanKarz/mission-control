@@ -179,16 +179,20 @@ project drops off the default view and lives behind `a`. That is already the
 "completed projects" list; there is no separate menu because `a` is the menu.
 
 **Retiring** (`x`, or `mc retire <name> --go`) is about *`claude --resume`*. It
-moves the project's session directories to `~/.claude/archive/shipped/<name>/`
-so they stop cluttering the session picker. Nothing is deleted.
+marks the project done *and* moves its session directories to
+`~/.claude/archive/shipped/<name>/` so they stop cluttering the session picker.
+Nothing is deleted.
 
-`s` changes status and nothing else. `x` does both — it marks the project done
-*and* archives its sessions. Use `s` when you just want to say what something
-is; use `x` when you are finished with it.
+So: `s` when you just want to say what something is, `x` when you are finished
+with it and want its sessions out of the way too. Marking done alone is enough
+to tidy the roster — a finished project with twenty sessions is the one worth
+retiring as well.
 
-You can do either, both, or neither. Marking done is enough to tidy the roster;
-retire as well once you're sure you won't resume those sessions — a finished
-project with twenty sessions is the one worth retiring.
+```
+s 4        mark it done; it moves behind `a`
+a          look at everything you have finished
+x          done *and* archive the sessions (asks first)
+```
 
 **`mc unretire <name> --go`** is the exact inverse: it restores every slug
 directory, including nested sub-repos, and sets the status back to `active`.
