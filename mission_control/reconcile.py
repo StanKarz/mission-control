@@ -265,6 +265,42 @@ def apply(ops: list[Op], *, dry_run: bool = False, tag: str = "") -> tuple[bool,
     return ok, log
 
 
+def shipped_dir(name: str) -> Path:
+    return ARCHIVE / "shipped" / name
+
+
+def unretire(name: str, *, dry_run: bool = False) -> tuple[bool, list[str]]:
+    """Put a retired project's sessions back where `--resume` can see them.
+
+    The exact inverse of :func:`retire`. Slug directory names encode the path
+    they belong to, so restoring is a move back to the store under the same
+    name — no path arithmetic, and it stays correct even if the project has
+    since moved (``fix`` handles that afterwards).
+    """
+    src = shipped_dir(name)
+    if not src.is_dir():
+        return False, [f"{name}: nothing retired under {src}"]
+    dirs = sorted(d for d in src.iterdir() if d.is_dir())
+    if not dirs:
+        return False, [f"{name}: {src} holds no session directories"]
+    if dry_run:
+        return True, [f"slug {d.name}\n     -> {STORE / d.name}" for d in dirs]
+
+    log, conflicts = [], []
+    for d in dirs:
+        target = STORE / d.name
+        if target.exists():
+            conflicts += _merge_dir(d, target)
+        else:
+            shutil.move(str(d), str(target))
+        log.append(f"restored {d.name[:56]}")
+    for c in conflicts:
+        log.append(f"CONFLICT   {c}")
+    if src.is_dir() and not any(src.iterdir()):
+        src.rmdir()
+    return (not conflicts), log
+
+
 def retire(name: str, slug_dirs: list[Path], *, dry_run: bool = False) -> tuple[bool, list[str]]:
     """Drop a project out of `claude --resume` without deleting anything.
 

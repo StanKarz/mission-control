@@ -12,6 +12,8 @@
     mc retire <project> [--go]  drop a finished project out of --resume
     mc brief [path]             phase + next check for the project at path (default: cwd)
     mc new <name>               scaffold a project dir, add it to progress.toml, launch claude
+    mc add [path]               track a directory that already exists (default: cwd)
+    mc unretire <project>       put a retired project's sessions back
     mc resume <project>         start/resume the project in the tmux pane to the left
 
 Anything that mutates is a dry run unless you pass --go.
@@ -398,22 +400,14 @@ def cmd_init(force: bool) -> int:
     return 0
 
 
-def cmd_new(name: str, launch: bool) -> int:
-    """Scaffold a project: mkdir, git init, an entry in progress.toml."""
+def _add_block(cfg_path: Path, name: str, root: Path, status: str = "active") -> None:
+    """Insert a project block, before the archived section if there is one."""
     import re as _re
-    root = cfg.new_project_root / name
-    if root.exists():
-        print(f"{root} already exists", file=sys.stderr)
-        return 2
-    root.mkdir(parents=True)
-    subprocess.run(["git", "init", "-q"], cwd=root)
-
-    cfg_path = config.PATH
     text = cfg_path.read_text() if cfg_path.exists() else ""
     block = (
         f'\n[projects."{name}"]\n'
         f'path   = "{_tildify(root)}"\n'
-        f'status = "active"\n'
+        f'status = "{status}"\n'
         f'# checks = run /init-project to define what "done" means here\n'
     )
     m = _re.search(r"^#.*archived.*$", text, _re.MULTILINE)
@@ -421,8 +415,59 @@ def cmd_new(name: str, launch: bool) -> int:
     cfg_path.parent.mkdir(parents=True, exist_ok=True)
     cfg_path.write_text(text)
 
+
+def cmd_add(where: str | None) -> int:
+    """Track a directory that already exists.
+
+    `new` deliberately refuses to touch an existing directory, so adopting one
+    you already work in previously meant hand-editing the config.
+    """
+    cfg = config.load()
+    root = Path(where or os.getcwd()).expanduser().resolve()
+    if not root.is_dir():
+        print(f"{root}: not a directory", file=sys.stderr)
+        return 2
+    name = root.name
+    for p in cfg.projects:
+        if p.name == name or p.path.resolve() == root:
+            print(f"already tracked as \"{p.name}\" ({p.status})", file=sys.stderr)
+            return 2
+    _add_block(config.PATH, name, root)
+    print(f'added [projects."{name}"] -> {_tildify(root)}')
+    print("run /init-project inside it to define what done looks like")
+    return 0
+
+
+def cmd_unretire(name: str, go: bool) -> int:
+    """Put a retired project's sessions back in front of --resume."""
+    from . import reconcile
+    ok, log = reconcile.unretire(name, dry_run=not go)
+    for line in log:
+        print("  " + line.replace("\n", "\n  "))
+    if ok and not go:
+        print("\ndry run — pass --go to apply")
+    if ok and go:
+        cfg = config.load()
+        if any(p.name == name for p in cfg.projects):
+            cfg.set_status(name, "active")
+            config.save(cfg)
+            print(f'\nset status = "active" for {name}')
+    return 0 if ok else 1
+
+
+def cmd_new(name: str, launch: bool) -> int:
+    """Scaffold a project: mkdir, git init, an entry in progress.toml."""
+    cfg = config.load()
+    root = cfg.new_project_root / name
+    if root.exists():
+        print(f"{root} already exists — use `mc add {root}` to track it",
+              file=sys.stderr)
+        return 2
+    root.mkdir(parents=True)
+    subprocess.run(["git", "init", "-q"], cwd=root)
+    _add_block(config.PATH, name, root)
     print(f"created {root}")
-    print(f'added [projects."{name}"] to {cfg_path}')
+    print(f'added [projects."{name}"] to {config.PATH}')
     print("run /init-project once you're in to define what done looks like")
     if launch:
         os.chdir(root)
@@ -466,6 +511,13 @@ def main() -> int:
         return cmd_report("month" if cmd == "month" else "week", abs(back))
     if cmd == "init":
         return cmd_init(go)
+    if cmd == "add":
+        return cmd_add(argv[1] if len(argv) > 1 else None)
+    if cmd == "unretire":
+        if len(argv) < 2:
+            print("usage: mc unretire <project> [--go]", file=sys.stderr)
+            return 2
+        return cmd_unretire(argv[1], go)
     if cmd == "check":
         return cmd_check(argv[1] if len(argv) > 1 else None)
     if cmd == "brief":

@@ -252,3 +252,42 @@ async def test_a_busy_neighbour_neither_sends_nor_splits(app, monkeypatch):
         await pilot.press("o")
         await pilot.pause()
         assert type(app.screen).__name__ == "Roster"
+
+
+def test_mc_new_binds_its_config(tmp_path, monkeypatch):
+    """`mc new` referenced an unbound `cfg` and raised NameError for every
+    invocation between the de-personalisation commit and now. Nothing caught
+    it because no test ever called the command."""
+    import mission_control.config as config
+    from mission_control.__main__ import cmd_new
+
+    cfg_path = tmp_path / "p.toml"
+    root = tmp_path / "projects"
+    root.mkdir()
+    cfg_path.write_text(f'[meta]\nproject_roots = ["{root}"]\nignore = []\n')
+    monkeypatch.setattr(config, "PATH", cfg_path)
+    monkeypatch.setenv("MC_CONFIG", str(cfg_path))
+
+    assert cmd_new("fresh", launch=False) == 0
+    assert (root / "fresh").is_dir()
+    assert '[projects."fresh"]' in cfg_path.read_text()
+    # a second call must refuse rather than clobber
+    assert cmd_new("fresh", launch=False) == 2
+
+
+def test_mc_add_adopts_an_existing_directory(tmp_path, monkeypatch):
+    import mission_control.config as config
+    from mission_control.__main__ import cmd_add
+
+    cfg_path = tmp_path / "p.toml"
+    root = tmp_path / "projects"
+    (root / "legacy").mkdir(parents=True)
+    cfg_path.write_text(f'[meta]\nproject_roots = ["{root}"]\nignore = []\n')
+    monkeypatch.setattr(config, "PATH", cfg_path)
+    monkeypatch.setenv("MC_CONFIG", str(cfg_path))
+
+    assert cmd_add(str(root / "legacy")) == 0
+    cfg = config.load(cfg_path)
+    assert [p.name for p in cfg.projects] == ["legacy"]
+    assert cmd_add(str(root / "legacy")) == 2, "must not add the same dir twice"
+    assert cmd_add(str(root / "nope")) == 2, "must reject a missing directory"

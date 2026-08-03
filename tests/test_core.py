@@ -418,3 +418,52 @@ def test_idle_shell_neighbour_is_usable(monkeypatch):
                         _fake_tmux(layout, {"#{pane_current_command}": "zsh"}))
     t = launcher.resolve_target()
     assert t.pane == "%1" and t.usable
+
+
+# ── retire / unretire ────────────────────────────────────────────────────
+def _seed_project(tmp_path, monkeypatch, sizes=(("", 40), ("-vendor-lib", 12))):
+    from mission_control import reconcile
+    store, arch = tmp_path / "store", tmp_path / "archive"
+    store.mkdir()
+    monkeypatch.setattr(reconcile, "STORE", store)
+    monkeypatch.setattr(reconcile, "ARCHIVE", arch)
+    proj = tmp_path / "projects" / "demo"
+    proj.mkdir(parents=True)
+    for suffix, n in sizes:
+        d = store / (slug(proj) + suffix)
+        d.mkdir()
+        (d / "s.jsonl").write_text("\n".join(f'{{"i":{i}}}' for i in range(n)) + "\n")
+        (d / "memory").mkdir()
+        (d / "memory" / "note.md").write_text("keep me\n")
+    return reconcile, store, arch, proj
+
+
+def test_retire_then_unretire_round_trips(tmp_path, monkeypatch):
+    """The retire docstring promises 'moving the directory back fully restores
+    it'. That has to hold for the whole slug subtree, not just the root."""
+    reconcile, store, arch, proj = _seed_project(tmp_path, monkeypatch)
+    before = {d.name: sum(1 for _ in (d / "s.jsonl").open()) for d in store.iterdir()}
+
+    ok, _ = reconcile.retire("demo", reconcile.slugs_under(proj))
+    assert ok and not list(store.iterdir()), "retire should empty the store"
+
+    ok, _ = reconcile.unretire("demo")
+    after = {d.name: sum(1 for _ in (d / "s.jsonl").open()) for d in store.iterdir()}
+    assert ok
+    assert after == before, "line counts must survive the round trip"
+    assert all((d / "memory" / "note.md").exists() for d in store.iterdir())
+    assert not (arch / "shipped" / "demo").exists(), "empty archive dir should go"
+
+
+def test_unretire_reports_when_there_is_nothing_to_restore(tmp_path, monkeypatch):
+    reconcile, *_ = _seed_project(tmp_path, monkeypatch)
+    ok, log = reconcile.unretire("never-retired")
+    assert not ok and "nothing retired" in log[0]
+
+
+def test_unretire_dry_run_moves_nothing(tmp_path, monkeypatch):
+    reconcile, store, arch, proj = _seed_project(tmp_path, monkeypatch)
+    reconcile.retire("demo", reconcile.slugs_under(proj))
+    ok, log = reconcile.unretire("demo", dry_run=True)
+    assert ok and len(log) == 2
+    assert not list(store.iterdir()), "dry run must not restore anything"

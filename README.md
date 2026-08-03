@@ -61,6 +61,7 @@ mc fix                       # relink stranded ones (dry run)
 mc fix --go                  # actually do it
 mc mv blog ~/archived        # move a project, carrying its sessions
 mc retire blog --go          # drop a finished project out of --resume
+mc unretire blog --go        # ...and put it back
 ```
 
 `doctor` sorts every slug into *linked*, *nested*, *untracked*, *stranded* or
@@ -246,7 +247,7 @@ changes how you work, and not for the better.
 ## Development
 
 ```sh
-uv run pytest        # 62 tests, ~5s
+uv run pytest        # 67 tests, ~5s
 ```
 
 Tests cover the logic where a bug is silent and expensive: slug encoding,

@@ -53,11 +53,13 @@ mc brief     [path]   # phase + next check for one project
 
 ```sh
 mc new <name>                    # mkdir + git init + config entry + launch claude
+mc add [path]                    # track a directory that already exists (default: cwd)
 mc check [project]               # run the cmd/gh_pr checks (see gotcha 7)
 mc resume <project>              # start/resume in the left tmux pane
 mc mv <project> <dest> --go      # move a project, carrying its sessions
 mc fix --go                      # relink slugs stranded by a move done elsewhere
 mc retire <project> --go         # drop a finished project out of --resume
+mc unretire <project> --go       # ...and put it back
 mc init                          # write a starter config
 ```
 
@@ -104,6 +106,17 @@ a session shows which files it edited, a check explains why it isn't passing.
 mc new my-thing          # creates the dir, git init, adds it to progress.toml
                          # then drops you into claude
 ```
+
+Already have the directory? `mc new` refuses to touch it — use **`mc add`**
+instead, which takes the current directory by default:
+
+```sh
+cd ~/projects/existing-thing && mc add
+```
+
+The two are different steps, not alternatives: `mc new` / `mc add` make the
+project *known* (a `[projects."name"]` block). `/init-project` defines what
+*done* means (the checks). You need both.
 
 Write a `CLAUDE.md` to scope it, then **`/init-project`** inside Claude. It
 interviews you about the current phase and what would make it done, then writes
@@ -158,9 +171,22 @@ every session beneath it. If you moved something with plain `mv`, run
 
 ### When something is finished
 
-Set `status = "done"` in the config, or press `x` to retire it — that archives
-its session directories so they stop cluttering `claude --resume`. Nothing is
-deleted; moving the directory back restores it.
+Two separate things, and it's worth keeping them apart:
+
+**`status = "done"`** is about the *roster*. It drops off the default view and
+lives behind `a`. That is already the "completed projects" list — there is no
+separate menu because `a` is the menu.
+
+**Retiring** (`x`, or `mc retire <name> --go`) is about *`claude --resume`*. It
+moves the project's session directories to `~/.claude/archive/shipped/<name>/`
+so they stop cluttering the session picker. Nothing is deleted.
+
+You can do either, both, or neither. Marking done is enough to tidy the roster;
+retire as well once you're sure you won't resume those sessions — a finished
+project with twenty sessions is the one worth retiring.
+
+**`mc unretire <name> --go`** is the exact inverse: it restores every slug
+directory, including nested sub-repos, and sets the status back to `active`.
 
 ---
 
@@ -278,7 +304,7 @@ Caches are disposable — delete them and they rebuild.
 ## Development
 
 ```sh
-uv run pytest        # 62 tests, ~5s
+uv run pytest        # 67 tests, ~5s
 ```
 
 Tests are weighted towards where a bug is silent and expensive: slug encoding,
