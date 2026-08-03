@@ -246,13 +246,16 @@ changes how you work, and not for the better.
 ## Development
 
 ```sh
-uv run pytest        # 36 tests, ~0.2s
+uv run pytest        # 62 tests, ~5s
 ```
 
 Tests cover the logic where a bug is silent and expensive: slug encoding,
-reconcile planning, the checks engine, and period arithmetic. Behaviour that
-depends on the real session store or a live tmux server was verified by
-observation instead — mocking an assumption you haven't tested just enshrines it.
+reconcile planning, the checks engine, period arithmetic, and tmux target
+resolution. Plus smoke tests that render every screen and exercise the key map.
+
+New behaviour worth trusting is verified by breaking it on purpose and
+confirming a test fails — mocking an assumption you have not tested just
+enshrines it.
 
 ## Licence
 

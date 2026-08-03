@@ -84,6 +84,9 @@ Useful flags: `--print` (show the command, don't run it), `--new-window`
 | `r` | refresh |
 | `q` or `ctrl+c` | quit |
 
+The arrow keys `up`/`down` work everywhere `j`/`k` do, and `home`/`end` alongside
+`g`/`G`.
+
 **Detail page** — `j`/`k` moves a cursor through the checks, commits and
 sessions, and whatever is selected expands: a commit shows the files it touched,
 a session shows which files it edited, a check explains why it isn't passing.
@@ -141,7 +144,9 @@ mc month
 
 `m` in the roster opens the same month view, plus space to write answers to
 `checkpoint_questions` if you've set any — editable only in the last three days
-of the month, inert the rest of the time by design.
+of the month, inert the rest of the time by design. `ctrl+s` saves,
+`tab` moves between answers. `ctrl+s` saves, `tab` moves
+between answers.
 
 ### When things move
 
@@ -273,11 +278,12 @@ Caches are disposable — delete them and they rebuild.
 ## Development
 
 ```sh
-uv run pytest        # 53 tests, ~4s
+uv run pytest        # 62 tests, ~5s
 ```
 
 Tests are weighted towards where a bug is silent and expensive: slug encoding,
-reconcile planning, the checks engine, period arithmetic. There are also smoke
+reconcile planning, the checks engine, period arithmetic, tmux target
+resolution. There are also smoke
 tests that render every screen and exercise the key map — added after a
 `NameError` in the detail view got shipped, which pure-logic tests structurally
 could not catch.
