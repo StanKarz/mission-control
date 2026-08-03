@@ -18,3 +18,7 @@ mockup.py
 
 # Quick-look render artefacts
 *.svg.png
+
+# Screenshots rendered from real data — the sanitised demo shots in
+# shots/{roster,detail,checkpoint}.* are the ones docs reference.
+shots/live-*
