@@ -90,10 +90,18 @@ Useful flags: `--print` (show the command, don't run it), `--new-window`
 The arrow keys `up`/`down` work everywhere `j`/`k` do, and `home`/`end` alongside
 `g`/`G`.
 
-**Detail page** — `j`/`k` moves a cursor through the checks, commits and
-sessions, and whatever is selected expands: a commit shows the files it touched,
-a session shows which files it edited, a check explains why it isn't passing.
-`⏎` resumes, `w` new window, `esc` back.
+**Detail page**
+
+| | |
+|---|---|
+| `j` `k` or arrows | move a cursor through checks, commits and sessions |
+| `space` | tick the selected `manual` check off, or back on |
+| `⏎` | resume |
+| `w` | resume in a new tmux window |
+| `esc` | back |
+
+Whatever is selected expands: a commit shows the files it touched, a session
+shows which files it edited, a check explains why it isn't passing.
 
 `q` and `ctrl+c` quit from anywhere. `esc` always goes back one screen.
 
@@ -146,8 +154,14 @@ and `w` opens a new window instead.
 
 During a long run, the roster shows `◆ working 4m` or `◆ needs you`.
 
-When you've done something a `cmd` check measures, press `c`. `path`, `git_tag`
-and `manual` checks update by themselves.
+When you've done something a `cmd` check measures, press `c`. `path` and
+`git_tag` checks re-evaluate on every open, so they need nothing.
+
+For the things nothing can measure — an outline reorganised, a decision made —
+use a `manual` check and tick it off by hand: `⏎` into the project, `j`/`k` to
+the check, `space`. Manual checks render as `☐` / `☑` rather than `✔` / `✖`, so
+you can see at a glance which rows are yours to tick and which are measured.
+`space` deliberately refuses to touch the other four types (see gotcha 14).
 
 ### Weekly and monthly
 
@@ -158,8 +172,7 @@ mc month
 
 `m` in the roster opens the same month view, plus space to write answers to
 `checkpoint_questions` if you've set any — editable only in the last three days
-of the month, inert the rest of the time by design. `ctrl+s` saves,
-`tab` moves between answers. `ctrl+s` saves, `tab` moves
+of the month, inert the rest of the time by design. `ctrl+s` saves, `tab` moves
 between answers.
 
 ### When things move
@@ -294,6 +307,14 @@ ever reinstall it non-editable, bump `version` in `pyproject.toml` first.
 **13. `ai-title` is a free summary.** Claude Code writes its own session title
 into the transcript, so nothing here needs an LLM to summarise what you did.
 
+**14. `space` only ticks `manual` checks, on purpose.** Being able to override a
+`path` or `cmd` check by hand sounds convenient and isn't: you would end up with
+a stored answer sitting next to a predicate that disagrees with it, and no way
+to tell later which one you actually believed — which is the exact rot that
+checks-as-predicates exists to prevent. If a check keeps being wrong, fix the
+predicate, or change its `type` to `manual` deliberately. `mc` refuses with a
+warning rather than silently doing nothing.
+
 ---
 
 ## Where things live
@@ -313,7 +334,7 @@ Caches are disposable — delete them and they rebuild.
 ## Development
 
 ```sh
-uv run pytest        # 70 tests, ~5s
+uv run pytest        # 78 tests, ~7s
 ```
 
 Tests are weighted towards where a bug is silent and expensive: slug encoding,

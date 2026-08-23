@@ -174,6 +174,10 @@ phase = "building"
   name = "readme"
   type = "path"
   value = "README.md"
+
+  [[projects."demo".checks]]
+  name = "outline written"
+  type = "manual"
 """
 
 
@@ -213,6 +217,41 @@ def test_set_status_rejects_unknown_values(tmp_path):
     cfg.set_status("demo", "done")
     config.save(cfg, f)
     assert config.load(f).projects[0].status == "done"
+
+
+def test_ticking_a_manual_check_round_trips(tmp_path):
+    """The `done` key is absent in the fixture, so this also covers writing one
+    that was never there — /init-project does not always emit it."""
+    f = _write(tmp_path)
+    cfg = config.load(f)
+    assert cfg.projects[0].checks[1].done is False
+
+    assert cfg.set_check_done("demo", 1, True) is True
+    config.save(cfg, f)
+    assert "# a comment that must survive" in f.read_text()
+    assert config.load(f).projects[0].checks[1].done is True
+
+    cfg.set_check_done("demo", 1, False)
+    config.save(cfg, f)
+    assert config.load(f).projects[0].checks[1].done is False
+
+
+def test_only_manual_checks_can_be_ticked(tmp_path):
+    """Progress is measured, never remembered. A hand-set `done` beside a
+    predicate would leave two answers and no way to tell which one you meant."""
+    f = _write(tmp_path)
+    cfg = config.load(f)
+    before = f.read_text()
+    assert cfg.set_check_done("demo", 0, True) is False   # a path check
+    config.save(cfg, f)
+    assert f.read_text() == before
+
+
+@pytest.mark.parametrize("name,index", [("demo", 7), ("demo", -1), ("ghost", 0)])
+def test_ticking_refuses_anything_it_cannot_address(tmp_path, name, index):
+    f = _write(tmp_path)
+    cfg = config.load(f)
+    assert cfg.set_check_done(name, index, True) is False
 
 
 def test_missing_config_is_empty_not_an_error(tmp_path):

@@ -104,6 +104,11 @@ class Roster(Screen):
         self._chrome()
         self.store.flush()
 
+    def on_screen_resume(self) -> None:
+        """Back from the detail screen, which may have ticked a box. Without
+        this the roster shows the old percentage until the next timer tick."""
+        self._repaint()
+
     def _repaint(self, scroll: bool = False) -> None:
         """Update row text in place, without touching the widget tree."""
         widgets = getattr(self, "row_widgets", [])
@@ -176,7 +181,7 @@ class Roster(Screen):
             nxt = next((c for c in p.checks
                         if not checks.is_fast(c) and slow.get(c.name) is False), None)
         if nxt:
-            detail = nxt.value or "mark done by hand"
+            detail = nxt.value or "manual — ⏎ then space to tick"
             room = max(w - (5 + 6 + len(nxt.name) + 3), 16)
             out.append(f"     [{RED}]next[/]  [{FG}]{nxt.name}[/]   "
                        f"[{DIM}]{fit(detail, room)}[/]")
@@ -268,7 +273,7 @@ class Roster(Screen):
     def action_open(self) -> None:
         if self.rows:
             self.app.push_screen(Detail(self.rows[self.index], self.store, self.index,
-                                        len(self.rows)))
+                                        len(self.rows), self.cfg))
 
     def action_refresh(self) -> None:
         self.refresh_data()
@@ -427,6 +432,7 @@ class Detail(Screen):
         Binding("escape", "app.pop_screen", "back"),
         Binding("j,down", "move(1)", "down"),
         Binding("k,up", "move(-1)", "up"),
+        Binding("space", "toggle", "tick"),
         Binding("enter", "resume", "resume"),
         Binding("w", "resume(True)", "new window"),
     ]
@@ -442,9 +448,12 @@ class Detail(Screen):
     #keys   {{ padding: 1 0 0 0; }}
     """
 
-    def __init__(self, project, store, idx, total):
+    def __init__(self, project, store, idx, total, cfg=None):
         super().__init__()
         self.p, self.store, self.idx, self.total = project, store, idx, total
+        # The same Config object the roster is holding, so a toggle here moves
+        # its percentage too rather than waiting for the next reload.
+        self.cfg = cfg if cfg is not None else config.load()
         self.cursor = 0
         self.items: list[tuple[str, object]] = []
 
@@ -453,6 +462,26 @@ class Detail(Screen):
     def _w(self) -> int:
         """Usable text width. Falls back to 76 before the first layout pass."""
         return max((self.size.width or 76) - 8, 48)
+
+    def _hero_text(self) -> str:
+        p = self.p
+        ok, total, pct = checks.progress(p)
+        if not total:
+            return (f"[b {CYAN}]{p.phase or p.status}[/]\n"
+                    f"[{DIM}]   progress not measured yet[/]\n"
+                    f"[{FAINT}]   run /init-project to define checks[/]")
+        return (f"[b {TEAL}]%[/]  [b {CYAN}]{p.phase or p.status}[/]\n"
+                f"[{DIM}]   {ok} of {total} checks passing[/]\n"
+                f"   {bar(pct, 30)}")
+
+    def _paint_hero(self) -> None:
+        """Redraw the big number. Separate from `_paint` because it lives in its
+        own widgets — ticking a box has to move the headline figure, or the
+        percentage silently disagrees with the list right under it."""
+        digits = self.query("#pct")
+        if digits:
+            digits.first(Digits).update(f"{round(checks.progress(self.p)[2])}")
+        self.query_one("#herotxt", Static).update(self._hero_text())
 
     def compose(self) -> ComposeResult:
         p = self.p
@@ -468,16 +497,10 @@ class Detail(Screen):
                 f"[{colour}]{dot} {p.status}[/][{DIM}]   {shown}[/]", id="title")
             with Horizontal(id="hero"):
                 if total:
-                    yield Digits(f"{round(pct)}")
-                    right = (f"[b {TEAL}]%[/]  [b {CYAN}]{p.phase or p.status}[/]\n"
-                             f"[{DIM}]   {ok} of {total} checks passing[/]\n"
-                             f"   {bar(pct, 30)}")
+                    yield Digits(f"{round(pct)}", id="pct")
                 else:
                     yield Static(f"\n[{FAINT}]  ─────[/]", id="nopct")
-                    right = (f"[b {CYAN}]{p.phase or p.status}[/]\n"
-                             f"[{DIM}]   progress not measured yet[/]\n"
-                             f"[{FAINT}]   run /init-project to define checks[/]")
-                yield Static(right, id="herotxt")
+                yield Static(self._hero_text(), id="herotxt")
             yield Static("", id="body")
             yield Static("", id="keys")
 
@@ -503,7 +526,13 @@ class Detail(Screen):
     # -- rendering ---------------------------------------------------------
     def _check_lines(self, c, sel: bool) -> list[str]:
         r = checks.evaluate_fast(self.p, c) if checks.is_fast(c) else None
-        if r is True:
+        if c.type == "manual":
+            # A tick box, not a pass/fail mark. Nothing is measuring these, so
+            # rendering an untouched one as a red ✖ says "failing" about a task
+            # you simply have not started — and the box is also the affordance
+            # that says which rows `space` works on.
+            mark, mc = ("☑", GREEN) if c.done else ("☐", MUTED)
+        elif r is True:
             mark, mc = "✔", GREEN
         elif r is False:
             mark, mc = "✖", RED
@@ -512,15 +541,15 @@ class Detail(Screen):
         w = self._w
         if not sel:
             room = max(w - 34, 20)
-            val = c.value or ("done" if c.done else "not done")
+            val = c.value or ("done" if c.done else "not started")
             return [f"  [{mc}]{mark}[/] [{FG}]{fit(c.name, 20)}[/] "
                     f"[{MUTED}]{fit(c.type, 9)}[/][{DIM}]{fit(val, room)}[/]"]
         out = [f"  [{mc}]{mark}[/] [b {FG}]{c.name}[/]  [{MUTED}]{c.type}[/]"]
         if c.value:
             out.append(f"      [{DIM}]{c.value}[/]")
         if c.type == "manual":
-            out.append(f"      [{DIM}]done = {str(c.done).lower()} "
-                       f"— set by hand in progress.toml[/]")
+            state = f"[{GREEN}]done[/]" if c.done else f"[{MUTED}]not started[/]"
+            out.append(f"      {state}[{DIM}] — space to toggle[/]")
         elif r is None:
             out.append(f"      [{MUTED}]not evaluated here: {c.type} checks shell out, "
                        f"so they run on demand[/]")
@@ -615,8 +644,10 @@ class Detail(Screen):
 
         self.query_one("#body", Static).update("\n".join(lines))
         hint = (f"[{MUTED}]j/k expand a row   [/]" if self.items else "")
+        tick = (f"[{MUTED}]space tick   [/]"
+                if any(c.type == "manual" for c in p.checks) else "")
         self.query_one("#keys", Static).update(
-            f"{hint}[{DIM}]⏎ resume   w new window   esc back   q quit[/]")
+            f"{hint}{tick}[{DIM}]⏎ resume   w new window   esc back   q quit[/]")
 
     # -- actions -----------------------------------------------------------
     def action_move(self, delta: int) -> None:
@@ -630,6 +661,39 @@ class Detail(Screen):
             self.query_one("#wrap").scroll_home(animate=False)
         elif self.cursor == len(self.items) - 1:
             self.query_one("#wrap").scroll_end(animate=False)
+
+    def action_toggle(self) -> None:
+        """Tick a manual check off — the one kind of progress nothing can measure.
+
+        Deliberately limited to `manual` checks. A `path` or `cmd` check that you
+        could override by hand would be worse than useless: the predicate goes on
+        saying one thing while the file says another, and a month later there is
+        no way to tell which of the two you believed. If a check keeps being
+        wrong, the fix is a better predicate — or making it `manual` on purpose.
+        """
+        if not self.items:
+            return
+        kind, c = self.items[self.cursor]
+        if kind != "check":
+            self.notify("space ticks a manual check — move up to one first")
+            return
+        if c.type != "manual":
+            self.notify(f"{c.name}: {c.type} checks are measured, not ticked",
+                        severity="warning")
+            return
+        # by identity, not equality — two checks can be written identically
+        i = next((n for n, x in enumerate(self.p.checks) if x is c), -1)
+        if not self.cfg.set_check_done(self.p.name, i, not c.done):
+            self.notify(f"{c.name}: could not write to progress.toml",
+                        severity="error")
+            return
+        config.save(self.cfg)
+        c.done = not c.done         # the roster holds this same object
+        self._paint()
+        self._paint_hero()
+        ok, total, _ = checks.progress(self.p)
+        self.notify(f"{c.name} — {'done' if c.done else 'not started'}"
+                    f"   ({ok}/{total})")
 
     def action_resume(self, new_window: bool = False) -> None:
         resume(self, self.p, self.store, new_window)

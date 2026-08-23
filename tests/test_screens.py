@@ -338,3 +338,69 @@ async def test_marking_done_removes_it_from_the_default_view(app):
         await pilot.press("a")            # ...but still there under `a`
         await pilot.pause()
         assert "alpha" in [p.name for p in app.screen.rows]
+
+
+async def test_space_ticks_a_manual_check_and_moves_the_percentage(app):
+    """alpha has two checks: readme (path, passing) and tagged (manual, false).
+    Ticking the manual one has to move the number, the roster and the file —
+    a toggle that only changes the glyph is a toggle you cannot trust."""
+    from mission_control import config
+    async with app.run_test(size=(76, 30)) as pilot:
+        await pilot.pause()
+        roster = app.screen
+        assert "50%" in roster._row(roster.rows[0], False)
+
+        await pilot.press("enter")
+        await pilot.pause()
+        detail = app.screen
+        assert type(detail).__name__ == "Detail"
+        await pilot.press("j")              # cursor 0 = readme, 1 = tagged
+        await pilot.pause()
+        await pilot.press("space")
+        await pilot.pause()
+
+        assert detail.p.checks[1].done is True
+        assert config.load().projects[0].checks[1].done is True, "not persisted"
+        assert detail.query_one("#pct").value == "100"
+
+        await pilot.press("escape")
+        await pilot.pause()
+        # what is painted, not what _row would recompute — the roster has to
+        # repaint on the way back, not on its next four-second tick
+        assert "100" in str(app.screen.row_widgets[0].content)
+
+        # and back off again
+        await pilot.press("enter")
+        await pilot.pause()
+        await pilot.press("j")
+        await pilot.press("space")
+        await pilot.pause()
+        assert config.load().projects[0].checks[1].done is False
+
+
+async def test_space_leaves_measured_checks_alone(app):
+    """Overriding a path check would leave the predicate disagreeing forever."""
+    from mission_control import config
+    async with app.run_test(size=(76, 30)) as pilot:
+        await pilot.pause()
+        before = Path(os.environ["MC_CONFIG"]).read_text()
+        await pilot.press("enter")
+        await pilot.pause()
+        await pilot.press("space")          # cursor is on readme, a path check
+        await pilot.pause()
+        assert app.screen.p.checks[0].done is False
+        assert Path(os.environ["MC_CONFIG"]).read_text() == before
+        assert config.load().projects[0].checks[0].done is False
+
+
+async def test_space_on_a_project_with_no_checks_does_nothing(app):
+    """beta has no checks at all, so there is no cursor and nothing to tick."""
+    async with app.run_test(size=(76, 30)) as pilot:
+        await pilot.pause()
+        app.screen.index = 1                # beta
+        await pilot.press("enter")
+        await pilot.pause()
+        await pilot.press("space")
+        await pilot.pause()
+        assert app.is_running
+        assert type(app.screen).__name__ == "Detail"

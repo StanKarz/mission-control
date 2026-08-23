@@ -88,6 +88,31 @@ class Config:
         if block is not None and status in VALID_STATUS:
             block["status"] = status
 
+    def set_check_done(self, name: str, index: int, done: bool) -> bool:
+        """Tick or untick one `manual` check. Returns whether it wrote anything.
+
+        Addressed by position rather than by name: check names are free text and
+        nothing stops two of them matching, so a name lookup could tick the wrong
+        box. `load()` builds `Project.checks` straight from this array in order,
+        so the index the caller is holding is the index here.
+
+        Only `manual` is writable, and that restriction lives here because this
+        is the one place that writes. Everything else is a predicate — forcing a
+        `path` or `cmd` check to done would store an answer beside a measured one
+        with no way to tell them apart afterwards, and the predicate would go on
+        disagreeing forever.
+        """
+        block = (self.doc.get("projects") or {}).get(name)
+        if block is None:
+            return False
+        arr = block.get("checks")
+        if arr is None or not (0 <= index < len(arr)):
+            return False
+        if str(arr[index].get("type", "manual")) != "manual":
+            return False
+        arr[index]["done"] = done
+        return True
+
     def set_answers(self, period: str, answers: list[str]) -> None:
         """Write answers into the document, creating the table as needed.
 

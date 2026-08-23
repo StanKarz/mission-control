@@ -71,7 +71,7 @@ mc unretire blog --go        # ...and put it back
 
 A hand-ticked checklist rots — you tick three boxes in week one, never open it
 again, and the percentage becomes a lie that's worse than no number. So every
-checklist item is a **predicate the app evaluates on open**:
+checklist item that *can* be a **predicate the app evaluates on open** is one:
 
 ```toml
 [[projects."orbital-sim".checks]]
@@ -86,6 +86,12 @@ value = "results/baseline.json"
 ```
 
 Five types: `path`, `git_tag`, `cmd`, `gh_pr`, and `manual` as the escape hatch.
+
+`manual` is for the real work no predicate can see — an outline reorganised, a
+decision finally made. Those you tick yourself: open the project, put the cursor
+on the check, press `space`. They render as `☐` / `☑` rather than `✔` / `✖`, so
+the boxes you own are obvious, and `space` refuses the other four types — an
+overridable predicate is just a checklist with extra steps.
 
 `path`, `git_tag` and `manual` are cheap and evaluate on every open. `cmd` and
 `gh_pr` shell out or hit the network, so they never run in a render path — press
@@ -225,6 +231,7 @@ dropped. `mc brief --hook` emits it correctly.)
 | `j` / `k` | move |
 | `⏎` | open detail (roster) · resume (detail) |
 | `j` / `k` / arrows | move · on the detail screen, expand a check, commit or session |
+| `space` | detail screen: tick a `manual` check off, or back on |
 | `g` / `G` | jump to top / bottom |
 | `o` / `w` | resume in the left pane / in a new window |
 | `s` | change status — active, blocked, paused, done, archived, ignored |
@@ -248,7 +255,7 @@ changes how you work, and not for the better.
 ## Development
 
 ```sh
-uv run pytest        # 70 tests, ~5s
+uv run pytest        # 78 tests, ~7s
 ```
 
 Tests cover the logic where a bug is silent and expensive: slug encoding,
