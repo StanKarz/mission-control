@@ -216,6 +216,33 @@ no sessions on disk reports `no sessions to archive`.
 **`mc unretire <name> --go`** is the exact inverse: it restores every slug
 directory, including nested sub-repos, and sets the status back to `active`.
 
+### When something is deleted
+
+Different from finished, and `x` is the wrong key for it. Retiring moves
+sessions to `~/.claude/archive/`, which sits outside Claude Code's retention
+sweep, so it keeps them for good — right for a project you might reopen,
+backwards for one you are binning.
+
+Tracked project:
+
+```sh
+rm -rf ~/Desktop/projects/<name>
+# then delete its [projects."<name>"] block from progress.toml
+```
+
+Dropping the block is the step that matters. Leave it in and `doctor` prints
+`! <name> path missing` on every run and the roster shows it in amber under `a`.
+
+An untracked one-off needs neither step: delete the directory and stop. Claude
+Code deletes the transcripts after `cleanupPeriodDays` (30 by default), so the
+slug goes by itself. Until then `doctor` lists it under STRANDED and exits 1 —
+noise, not a problem, and `mc fix` will decline to guess where it went.
+
+To clear one sooner, `claude project purge ~/Desktop/projects/<name>` deletes
+the transcripts, the matching prompt history and the trust entry. It prints a
+plan and asks first, and `--dry-run` shows the plan without touching anything.
+Unlike everything `mc` does, it cannot be undone.
+
 ---
 
 ## Statuses
