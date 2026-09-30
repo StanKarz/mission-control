@@ -207,6 +207,12 @@ a          look at everything you have finished
 x          done *and* archive the sessions (asks first)
 ```
 
+With `a` on, retiring does not make the row disappear — `a` is the view that
+shows finished work, so a project you just finished belongs in it. What changes
+is the status, and the row sorts down into the done group. The cursor follows
+it, and the notification says which of the two halves happened: a project with
+no sessions on disk reports `no sessions to archive`.
+
 **`mc unretire <name> --go`** is the exact inverse: it restores every slug
 directory, including nested sub-repos, and sets the status back to `active`.
 
@@ -303,6 +309,14 @@ when the version string is unchanged, so a "reinstall" leaves the old code in
 place and any fix appears not to work. This repo is installed with
 `uv tool install --editable .`, so `mc` always runs the current source. If you
 ever reinstall it non-editable, bump `version` in `pyproject.toml` first.
+
+**13a. Claude Code's process title is its version number.** tmux answers
+`2.1.284` rather than `claude` for `pane_current_command`, so a pane running
+Claude looks like an unknown program. It changes nothing about safety — the
+shell allowlist is what decides whether keys can be sent — but `mc` translates a
+bare version back to `claude` in the message, because "claude is running there"
+tells you to press `w` and "2.1.284 is running there" reads like a broken
+install.
 
 **13. `ai-title` is a free summary.** Claude Code writes its own session title
 into the transcript, so nothing here needs an LLM to summarise what you did.

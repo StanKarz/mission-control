@@ -404,3 +404,68 @@ async def test_space_on_a_project_with_no_checks_does_nothing(app):
         await pilot.pause()
         assert app.is_running
         assert type(app.screen).__name__ == "Detail"
+
+
+def _notes(screen, monkeypatch) -> list[str]:
+    """Capture what the screen told the user."""
+    said: list[str] = []
+    monkeypatch.setattr(type(screen), "notify",
+                        lambda self, msg, **kw: said.append(str(msg)))
+    return said
+
+
+async def test_retiring_in_show_all_keeps_the_cursor_on_that_project(app, monkeypatch):
+    """With `a` on, a retired project stays on the roster (done is shown) but
+    re-sorts into the done group. The index used to stay put, so the highlight
+    silently jumped to a different project and it read as "nothing happened"."""
+    from mission_control import reconcile
+    monkeypatch.setattr(reconcile, "slugs_under", lambda p: [])
+    async with app.run_test(size=(76, 30)) as pilot:
+        await pilot.pause()
+        await pilot.press("a")
+        await pilot.pause()
+        r = app.screen
+        assert [p.name for p in r.rows] == ["alpha", "beta", "delta", "gamma"]
+        r.index = 1                                  # beta, blocked
+        await pilot.press("x")
+        await pilot.pause()
+        await pilot.press("y")
+        await pilot.pause()
+
+        assert r.rows[r.index].name == "beta", "cursor must follow the project"
+        assert [p.name for p in r.rows] == ["alpha", "delta", "beta", "gamma"]
+        assert next(p for p in r.rows if p.name == "beta").status == "done"
+
+
+async def test_retire_says_whether_any_sessions_moved(app, monkeypatch):
+    """"retired beta" with nothing archived reads as a no-op when the row also
+    stays put. Say which half actually happened."""
+    from mission_control import reconcile
+    monkeypatch.setattr(reconcile, "slugs_under", lambda p: [])
+    async with app.run_test(size=(76, 30)) as pilot:
+        await pilot.pause()
+        said = _notes(app.screen, monkeypatch)
+        await pilot.press("x")
+        await pilot.pause()
+        await pilot.press("y")
+        await pilot.pause()
+        assert said, "retiring said nothing at all"
+        assert "done" in said[-1]
+        assert "no sessions" in said[-1]
+
+
+async def test_changing_status_keeps_the_cursor_on_that_project(app):
+    """Same re-sort problem behind `s`."""
+    async with app.run_test(size=(76, 30)) as pilot:
+        await pilot.pause()
+        r = app.screen
+        r.index = 0                                  # alpha, active
+        await pilot.press("a")                       # show everything
+        await pilot.pause()
+        r.index = 0
+        await pilot.press("s")
+        await pilot.pause()
+        await pilot.press("4")                       # done
+        await pilot.pause()
+        assert r.rows[r.index].name == "alpha"
+        assert r.rows[r.index].status == "done"

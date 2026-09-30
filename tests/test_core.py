@@ -506,3 +506,30 @@ def test_unretire_dry_run_moves_nothing(tmp_path, monkeypatch):
     ok, log = reconcile.unretire("demo", dry_run=True)
     assert ok and len(log) == 2
     assert not list(store.iterdir()), "dry run must not restore anything"
+
+
+# ── what tmux reports for a pane running Claude Code ─────────────────────
+def test_a_pane_running_claude_is_named_claude_not_a_version(monkeypatch):
+    """Claude Code sets its process title to its own version, so tmux answers
+    `2.1.284` for `pane_current_command`. Reported raw, the refusal reads like
+    a version problem rather than "claude is already running in that pane"."""
+    from mission_control import launcher
+    monkeypatch.setattr(launcher, "in_tmux", lambda: True)
+    monkeypatch.setattr(launcher, "_neighbour_left", lambda: "%3")
+    monkeypatch.setenv("TMUX_PANE", "%9")
+    monkeypatch.setattr(launcher, "_tmux", lambda *a, **k: (0, "2.1.284"))
+
+    t = launcher.resolve_target()
+    assert t.reason == "busy" and not t.usable
+    assert "claude is running there" in t.problem
+    assert "2.1.284" not in t.problem
+
+
+@pytest.mark.parametrize("cmd", ["nvim", "python3.13", "uv", "htop"])
+def test_other_busy_commands_keep_their_real_name(monkeypatch, cmd):
+    from mission_control import launcher
+    monkeypatch.setattr(launcher, "in_tmux", lambda: True)
+    monkeypatch.setattr(launcher, "_neighbour_left", lambda: "%3")
+    monkeypatch.setenv("TMUX_PANE", "%9")
+    monkeypatch.setattr(launcher, "_tmux", lambda *a, **k: (0, cmd))
+    assert launcher.resolve_target().problem.startswith(f"{cmd} is running there")

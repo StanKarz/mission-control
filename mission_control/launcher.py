@@ -24,6 +24,7 @@ command there would submit it as a prompt rather than run it.
 from __future__ import annotations
 
 import os
+import re
 import shlex
 import subprocess
 from dataclasses import dataclass
@@ -31,6 +32,18 @@ from pathlib import Path
 
 # Foreground commands that mean "a prompt is waiting", so typing is safe.
 SHELLS = {"zsh", "bash", "sh", "fish", "dash", "ksh", "tcsh", "csh", "nu", "elvish"}
+
+# Claude Code sets its process title to its own version, so tmux answers
+# `2.1.284` for a pane running it. Only the message is affected — the shell
+# allowlist above is what decides whether sending keys is safe — but "2.1.284 is
+# running there" reads like a version problem rather than "claude is already in
+# that pane", which is the one thing you need to know to pick `w` instead.
+VERSIONISH = re.compile(r"^\d+\.\d+(\.\d+)*$")
+
+
+def label(cmd: str) -> str:
+    """What to call the program occupying a pane, for a human."""
+    return "claude" if VERSIONISH.match(cmd) else cmd
 
 DEFAULT_TARGET = "{left-of}"
 
@@ -130,7 +143,8 @@ def resolve_target(spec: str | None = None) -> Target:
     cmd = cmd if rc == 0 else ""
     if cmd and cmd not in SHELLS:
         return Target(pane=pane, command=cmd, reason="busy",
-                      problem=f"{cmd} is running there — keys would go to it, not a shell")
+                      problem=f"{label(cmd)} is running there — keys would go to "
+                              f"it, not a shell")
     return Target(pane=pane, command=cmd or None)
 
 

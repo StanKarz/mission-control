@@ -236,6 +236,7 @@ dropped. `mc brief --hook` emits it correctly.)
 | `o` / `w` | resume in the left pane / in a new window |
 | `s` | change status — active, blocked, paused, done, archived, ignored |
 | `x` | retire: mark done *and* archive its sessions (confirm first) |
+| | under `a`, a retired project stays visible and sorts into the done group |
 | `c` | run this project's `cmd` / `gh_pr` checks |
 | `a` | show finished and parked projects too (hidden by default) |
 | `m` | month checkpoint: the month so far, plus any written prompts |

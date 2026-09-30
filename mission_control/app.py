@@ -104,6 +104,22 @@ class Roster(Screen):
         self._chrome()
         self.store.flush()
 
+    def refresh_keeping(self, name: str) -> None:
+        """Rebuild, then put the cursor back on `name`.
+
+        Rows are sorted by status, so changing one re-sorts the list under the
+        cursor: the index stays where it was and now highlights a different
+        project. With `a` on — where a finished project stays visible instead of
+        disappearing — that is the whole visible result of the keypress, and it
+        reads as nothing having happened.
+        """
+        self.refresh_data()
+        for i, p in enumerate(self.rows):
+            if p.name == name:
+                self.index = i
+                break
+        self._repaint(scroll=True)
+
     def on_screen_resume(self) -> None:
         """Back from the detail screen, which may have ticked a box. Without
         this the roster shows the old percentage until the next timer tick."""
@@ -322,8 +338,9 @@ class Roster(Screen):
             self.cfg.set_status(p.name, status)
             config.save(self.cfg)
             self.notify(f"{p.name} → {status}")
-            # It may have just left the default view; keep the cursor in range.
-            self.refresh_data()
+            # It may have just left the default view, or re-sorted under the
+            # cursor; either way the cursor belongs on the project you changed.
+            self.refresh_keeping(p.name)
 
         self.app.push_screen(StatusPicker(p), chosen)
 
@@ -352,9 +369,13 @@ class Roster(Screen):
             good, log = reconcile.retire(p.name, dirs)
             self.cfg.set_status(p.name, "done")
             config.save(self.cfg)
-            self.notify(f"retired {p.name}" if good else "; ".join(log),
+            # Retiring is two things, and with no sessions to move only one of
+            # them happens. Saying "retired X" for a status change alone reads
+            # as a no-op when the row is still on screen under `a`.
+            moved = f"{n} session(s) archived" if n else "no sessions to archive"
+            self.notify(f"{p.name} → done · {moved}" if good else "; ".join(log),
                         severity="information" if good else "error")
-            self.refresh_data()
+            self.refresh_keeping(p.name)
 
         self.app.push_screen(Confirm(f"Retire {p.name}?", detail), done)
 
