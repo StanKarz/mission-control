@@ -93,8 +93,9 @@ like*. "Writeup" isn't a check. "`writeup.md` exists and is over 800 words" is.
 
 ### Launches work into the pane next door
 
-`o` on a row sends `cd <path> && claude --resume <id>` to the tmux pane on your
-left. If that pane is busy (usually, since it's where Claude runs) the send is
+`mc work` gets you the layout: your shell where you are, the roster beside it,
+reusing an existing split rather than adding a third pane. From there, `o` on a
+row sends `cd <path> && claude --resume <id>` to the tmux pane on your left. If that pane is busy (usually, since it's where Claude runs) the send is
 **refused** rather than typed into the running program as a prompt, and `w`
 opens a new window instead.
 
@@ -199,7 +200,7 @@ changes how you work, and not for the better.
 ## Development
 
 ```sh
-uv run pytest        # 96 tests, ~8s
+uv run pytest        # 102 tests, ~8s
 ```
 
 Tests are weighted towards where a bug is silent and expensive: slug encoding,

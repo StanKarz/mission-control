@@ -77,26 +77,15 @@ class Target:
         return self.reason == "no-pane"
 
 
-def _neighbour_left() -> str | None:
-    """The pane immediately left of *this* one, computed from geometry.
-
-    tmux resolves relative targets like ``{left-of}`` against the session's
-    **active** pane, not the pane whose process is asking. Those are usually
-    the same — you press a key in the pane you are looking at — but not always:
-    after this app opens a work pane, focus moves there, and a later query from
-    the roster would then be answered relative to the wrong pane (and can wrap
-    around to the far edge, pointing back at the roster itself).
-
-    Reading the layout and picking the nearest pane whose right edge touches
-    ours removes that ambiguity entirely.
-    """
+def _panes() -> dict[str, tuple[int, int, int, int]]:
+    """Every pane in this pane's window, as (left, right, top, bottom)."""
     me = os.environ.get("TMUX_PANE")
     if not me:
-        return None
+        return {}
     rc, out = _tmux("list-panes", "-t", me,
                     "-F", "#{pane_id} #{pane_left} #{pane_right} #{pane_top} #{pane_bottom}")
     if rc != 0:
-        return None
+        return {}
     geo: dict[str, tuple[int, int, int, int]] = {}
     for line in out.splitlines():
         bits = line.split()
@@ -105,18 +94,115 @@ def _neighbour_left() -> str | None:
                 geo[bits[0]] = tuple(int(b) for b in bits[1:])  # type: ignore[assignment]
             except ValueError:
                 continue
+    return geo
+
+
+def _neighbour(side: str) -> str | None:
+    """The pane immediately left or right of *this* one, computed from geometry.
+
+    tmux resolves relative targets like ``{left-of}`` against the session's
+    **active** pane, not the pane whose process is asking. Those are usually
+    the same — you press a key in the pane you are looking at — but not always:
+    after this app opens a work pane, focus moves there, and a later query from
+    the roster would then be answered relative to the wrong pane (and can wrap
+    around to the far edge, pointing back at the roster itself).
+
+    Reading the layout and picking the nearest pane whose edge touches ours
+    removes that ambiguity entirely.
+    """
+    me = os.environ.get("TMUX_PANE")
+    geo = _panes()
     if me not in geo:
         return None
-    my_left, _, my_top, my_bottom = geo[me]
+    my_left, my_right, my_top, my_bottom = geo[me]
     best = None
-    for pid, (_, right, top, bottom) in geo.items():
-        if pid == me or right >= my_left:
+    for pid, (left, right, top, bottom) in geo.items():
+        if pid == me:
             continue
         if bottom < my_top or top > my_bottom:      # no vertical overlap
             continue
-        if best is None or right > geo[best][1]:    # nearest wins
-            best = pid
+        if side == "left":
+            if right >= my_left:
+                continue
+            if best is None or right > geo[best][1]:    # nearest wins
+                best = pid
+        else:
+            if left <= my_right:
+                continue
+            if best is None or left < geo[best][0]:
+                best = pid
     return best
+
+
+def _neighbour_left() -> str | None:
+    return _neighbour("left")
+
+
+def runs_roster(pane: str) -> bool:
+    """Whether `mc` is already running in that pane.
+
+    `pane_current_command` is no help: the roster is a Python process, so tmux
+    reports `python3.13`. The entry point only appears on the command line.
+    """
+    rc, pid = _tmux("display-message", "-p", "-t", pane, "#{pane_pid}")
+    if rc != 0 or not pid.isdigit():
+        return False
+    try:
+        kids = subprocess.run(["pgrep", "-P", pid], capture_output=True,
+                              text=True, timeout=5).stdout.split()
+        for k in kids:
+            args = subprocess.run(["ps", "-o", "args=", "-p", k], capture_output=True,
+                                  text=True, timeout=5).stdout
+            if "mission_control" in args or re.search(r"(^|/)mc(\s|$)", args):
+                return True
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return False
+
+
+@dataclass
+class RosterPlan:
+    """Where the roster should go when you ask for the working layout."""
+    action: str                     # "split" | "send" | "already" | "refuse"
+    pane: str | None = None
+    problem: str | None = None
+
+
+def plan_roster() -> RosterPlan:
+    """Work out how to get to two panes: work here, roster beside it.
+
+    The naive version always splits, so running it in a window you had already
+    split by hand left you with three panes. If a neighbour already exists,
+    that is where the roster belongs.
+    """
+    if not in_tmux():
+        return RosterPlan("refuse", problem="not running inside tmux")
+    geo = _panes()
+    if len(geo) <= 1:
+        return RosterPlan("split")
+
+    # Right by convention: work on the left, roster on the right. Falling back
+    # to the left neighbour still beats making a third pane.
+    pane = _neighbour("right") or _neighbour("left")
+    if pane is None:
+        return RosterPlan("refuse", problem="no pane beside this one to use")
+    if runs_roster(pane):
+        return RosterPlan("already", pane=pane)
+
+    rc, cmd = _tmux("display-message", "-p", "-t", pane, "#{pane_current_command}")
+    cmd = cmd if rc == 0 else ""
+    if cmd and cmd not in SHELLS:
+        return RosterPlan("refuse", pane=pane,
+                          problem=f"{label(cmd)} is running in {pane}, so the roster "
+                                  f"would be typed into it")
+    return RosterPlan("send", pane=pane)
+
+
+def split_for_roster(width: str = "40%") -> tuple[bool, str]:
+    """Open the roster in a new pane to the right, keeping focus where it is."""
+    rc, out = _tmux("split-window", "-h", "-l", width, "-d", "-c", os.getcwd(), "mc")
+    return (rc == 0), ("roster opened on the right" if rc == 0
+                       else out or "split-window failed")
 
 
 def resolve_target(spec: str | None = None) -> Target:

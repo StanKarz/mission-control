@@ -3,6 +3,7 @@
 usage: mc [command] [arguments] [--go]
 
   mc                          open the TUI
+  mc work [width]             two panes: your shell here, the roster beside it
 
 track
   mc new <name>               make the directory, track it, start claude in it
@@ -392,6 +393,32 @@ def _brief_lines(target: str | None) -> list[str]:
     return lines
 
 
+def cmd_work(width: str = "40%") -> int:
+    """Get to the working layout: your shell here, the roster beside it.
+
+    Two panes either way. Running this in a window you had already split used to
+    make a third, because it always split.
+    """
+    from . import launcher
+    plan = launcher.plan_roster()
+
+    if plan.action == "split":
+        ok, msg = launcher.split_for_roster(width)
+        print(f"{'✓' if ok else '✗'} {msg}")
+        return 0 if ok else 1
+    if plan.action == "already":
+        print(f"✓ the roster is already running in {plan.pane}")
+        return 0
+    if plan.action == "send":
+        ok, msg = launcher.send(launcher.Target(pane=plan.pane), "mc")
+        print(f"✓ roster opened in {plan.pane}" if ok else f"✗ {msg}")
+        return 0 if ok else 1
+
+    print(f"\033[31m✗\033[0m {plan.problem}")
+    print("  run `mc` wherever you want the roster")
+    return 1
+
+
 def cmd_brief(target: str | None, as_hook: bool) -> int:
     lines = _brief_lines(target)
     if as_hook:
@@ -549,6 +576,8 @@ def main() -> int:
         return cmd_unretire(argv[1], go)
     if cmd == "check":
         return cmd_check(argv[1] if len(argv) > 1 else None)
+    if cmd == "work":
+        return cmd_work(argv[1] if len(argv) > 1 else "40%")
     if cmd == "brief":
         return cmd_brief(argv[1] if len(argv) > 1 else None, as_hook)
     if cmd == "new":

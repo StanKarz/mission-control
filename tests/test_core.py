@@ -622,3 +622,77 @@ def test_falls_back_to_basic_colours_without_256_support(monkeypatch):
     assert report.palette() == report.PALETTE_8
     monkeypatch.setenv("TERM", "xterm-256color")
     assert report.palette() == report.PALETTE
+
+
+# ── the working layout: two panes, never three ───────────────────────────
+def test_alone_in_the_window_splits(monkeypatch):
+    from mission_control import launcher
+    monkeypatch.setattr(launcher, "in_tmux", lambda: True)
+    monkeypatch.setenv("TMUX_PANE", "%1")
+    monkeypatch.setattr(launcher, "_tmux", _fake_tmux("%1 0 179 0 44"))
+    assert launcher.plan_roster().action == "split"
+
+
+def test_an_already_split_window_uses_the_pane_it_has(monkeypatch):
+    """The whole point: running this in a hand-split window used to make a
+    third pane. Two panes in, two panes out."""
+    from mission_control import launcher
+    layout = "%1 0 99 0 44\n%2 101 199 0 44"
+    monkeypatch.setattr(launcher, "in_tmux", lambda: True)
+    monkeypatch.setenv("TMUX_PANE", "%1")
+    monkeypatch.setattr(launcher, "_tmux",
+                        _fake_tmux(layout, {"#{pane_current_command}": "zsh"}))
+    monkeypatch.setattr(launcher, "runs_roster", lambda pane: False)
+    plan = launcher.plan_roster()
+    assert plan.action == "send", "must not split a window that is already split"
+    assert plan.pane == "%2", "the roster belongs on the right"
+
+
+def test_a_busy_neighbour_is_refused_rather_than_typed_into(monkeypatch):
+    from mission_control import launcher
+    layout = "%1 0 99 0 44\n%2 101 199 0 44"
+    monkeypatch.setattr(launcher, "in_tmux", lambda: True)
+    monkeypatch.setenv("TMUX_PANE", "%1")
+    monkeypatch.setattr(launcher, "_tmux",
+                        _fake_tmux(layout, {"#{pane_current_command}": "2.1.284"}))
+    monkeypatch.setattr(launcher, "runs_roster", lambda pane: False)
+    plan = launcher.plan_roster()
+    assert plan.action == "refuse"
+    assert "claude is running" in plan.problem
+
+
+def test_a_second_run_notices_the_roster_is_already_up(monkeypatch):
+    from mission_control import launcher
+    layout = "%1 0 99 0 44\n%2 101 199 0 44"
+    monkeypatch.setattr(launcher, "in_tmux", lambda: True)
+    monkeypatch.setenv("TMUX_PANE", "%1")
+    monkeypatch.setattr(launcher, "_tmux", _fake_tmux(layout))
+    monkeypatch.setattr(launcher, "runs_roster", lambda pane: True)
+    plan = launcher.plan_roster()
+    assert plan.action == "already" and plan.pane == "%2"
+
+
+def test_from_the_right_hand_pane_it_falls_back_to_the_left(monkeypatch):
+    """Still two panes. Better than a third, even though the roster ends up on
+    the wrong side of the convention."""
+    from mission_control import launcher
+    layout = "%1 0 99 0 44\n%2 101 199 0 44"
+    monkeypatch.setattr(launcher, "in_tmux", lambda: True)
+    monkeypatch.setenv("TMUX_PANE", "%2")
+    monkeypatch.setattr(launcher, "_tmux",
+                        _fake_tmux(layout, {"#{pane_current_command}": "zsh"}))
+    monkeypatch.setattr(launcher, "runs_roster", lambda pane: False)
+    plan = launcher.plan_roster()
+    assert plan.action == "send" and plan.pane == "%1"
+
+
+def test_stacked_panes_are_not_side_neighbours(monkeypatch):
+    """A horizontal split has no left or right neighbour, so there is nowhere
+    to put the roster except a new pane."""
+    from mission_control import launcher
+    layout = "%1 0 179 0 21\n%2 0 179 23 44"
+    monkeypatch.setattr(launcher, "in_tmux", lambda: True)
+    monkeypatch.setenv("TMUX_PANE", "%1")
+    monkeypatch.setattr(launcher, "_tmux", _fake_tmux(layout))
+    monkeypatch.setattr(launcher, "runs_roster", lambda pane: False)
+    assert launcher.plan_roster().action == "refuse"

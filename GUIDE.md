@@ -130,15 +130,16 @@ zero problems.
 
 ### A normal day
 
-A shell function worth having:
-
 ```sh
-work() { tmux split-window -h -l 40% -d "mc"; }
+mc work     # your shell stays here, the roster opens beside it
 ```
 
-```sh
-work        # splits tmux: work on the left, roster on the right
-```
+Worth a shell alias: `work() { mc work; }`.
+
+You get two panes either way. In a fresh window it splits; in a window you had
+already split by hand it uses the pane that's there rather than adding a third.
+If something other than a shell is in that pane it refuses, for the same reason
+`o` does.
 
 Glance at the roster. The highlighted row tells you the next unmet check.
 Press `o` to resume that project, and the roster switches to that project's
