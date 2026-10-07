@@ -61,7 +61,7 @@ class Roster(Screen):
 
     def compose(self) -> ComposeResult:
         yield Static("", id="head")
-        yield Static(f"[{FAINT}]{'━' * 68}[/]", id="rule")
+        yield Static("", id="rule")
         # can_focus=False: otherwise the container eats up/down as scroll
         # keys and the selection never moves. Mouse wheel still works.
         yield VerticalScroll(id="list", can_focus=False)
@@ -120,6 +120,10 @@ class Roster(Screen):
                 break
         self._repaint(scroll=True)
 
+    def on_resize(self) -> None:
+        """Columns are computed from the pane width, so a drag has to repaint."""
+        self._repaint()
+
     def on_screen_resume(self) -> None:
         """Back from the detail screen, which may have ticked a box. Without
         this the roster shows the old percentage until the next timer tick."""
@@ -135,6 +139,18 @@ class Roster(Screen):
             widgets[self.index].scroll_visible(animate=False)
         self._chrome()
 
+    def _layout(self) -> tuple[int, int]:
+        """(name column, bar width), scaled to the pane.
+
+        Pinned at 22 and 16, a stretched pane left half the row empty. Let them
+        grow without a ceiling, though, and the name drifts so far from the
+        percentage that the row stops reading as one thing, so both cap out.
+        """
+        avail = max((self.size.width or 76) - 8, 44)
+        name = max(22, min(avail - 46, 38))
+        width = max(16, min(avail - name - 24, 30))
+        return name, width
+
     def _row(self, p: config.Project, sel: bool) -> str:
         stranded = not p.exists
         status = "stranded" if stranded else p.status
@@ -145,12 +161,13 @@ class Roster(Screen):
 
         namec = FG if status in ("active", "blocked", "stranded") else DIM
         edge = f"[{colour}]▎[/]" if sel else " "
+        namew, barw = self._layout()
         # No checks defined is not 0% done — say nothing rather than something false.
         if total:
-            meter = f"{bar(pct)} [b {colour}]{round(pct):>3}%[/]"
+            meter = f"{bar(pct, barw)} [b {colour}]{round(pct):>3}%[/]"
         else:
-            meter = f"[{FAINT}]{'╌' * 16}[/] [{FAINT}]  —[/]"
-        line1 = (f"{edge}[{colour}]{dot}[/] [b {namec}]{fit(p.name, 22)}[/] "
+            meter = f"[{FAINT}]{'╌' * barw}[/] [{FAINT}]  —[/]"
+        line1 = (f"{edge}[{colour}]{dot}[/] [b {namec}]{fit(p.name, namew)}[/] "
                  f"{meter}   {spark(wk, hi=getattr(self, 'peak', 0))}")
         cnt = f"{ok}/{total}" if total else "—"
         # Live state outranks every other note: it is the only thing here that
@@ -170,7 +187,7 @@ class Roster(Screen):
         elif p.status == "paused":
             note = f"   [{MUTED}]paused[/]"
         line2 = (
-            f"   [{DIM}]{fit(p.phase or p.status, 20)}[/]"
+            f"   [{DIM}]{fit(p.phase or p.status, namew - 2)}[/]"
             f"[{MUTED}]{cnt:>5} checks[/][{DIM}]{ago(touched):>11}[/]{note}"
         )
         if not sel:
@@ -228,10 +245,12 @@ class Roster(Screen):
     def _chrome(self) -> None:
         n = len(self.rows)
         act = sum(1 for p in self.rows if p.status == "active")
+        w = max((self.size.width or 76) - 6, 40)
+        self.query_one("#rule", Static).update(f"[{FAINT}]{'━' * w}[/]")
+        right = f"{act} active  ·  {datetime.now():%a %d %b %H:%M}"
         self.query_one("#head", Static).update(
             f"[b {FG}]MISSION[/][b {CYAN}] CONTROL[/]"
-            f"[{DIM}]{'':<22}{act} active  ·  "
-            f"{datetime.now():%a %d %b %H:%M}[/]"
+            f"[{DIM}]{right:>{max(w - 15, 10)}}[/]"
         )
         # today's recap, attributed by file path rather than by slug
         today = datetime.now().date()
@@ -256,7 +275,8 @@ class Roster(Screen):
         if stranded:
             health.append(f"[{AMBER}]▲ {stranded} missing[/]")
         if orph:
-            health.append(f"[{AMBER}]▲ {orph} unknown slugs[/]")
+            health.append(f"[{AMBER}]▲ {orph} unknown slug"
+                          f"{'s' if orph != 1 else ''}[/]")
         health.append(f"[{TEAL}]● {act} active[/]")
         hidden = getattr(self, "hidden_count", 0)
         if hidden and not self.show_all:

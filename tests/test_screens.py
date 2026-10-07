@@ -469,3 +469,59 @@ async def test_changing_status_keeps_the_cursor_on_that_project(app):
         await pilot.pause()
         assert r.rows[r.index].name == "alpha"
         assert r.rows[r.index].status == "done"
+
+
+async def test_the_roster_uses_the_width_it_is_given(app):
+    """Columns were pinned at 22 and 16, so stretching the pane just added
+    empty space on the right."""
+    async with app.run_test(size=(76, 30)) as pilot:
+        await pilot.pause()
+        narrow = app.screen._layout()
+        app.screen.size  # noqa: B018
+        await pilot.resize_terminal(140, 30)
+        await pilot.pause()
+        wide = app.screen._layout()
+        assert wide[0] > narrow[0], "the name column must grow with the pane"
+        assert wide[1] > narrow[1], "so must the progress bar"
+        # and the rendered row actually gets longer
+        assert len(app.screen._row(app.screen.rows[0], False)) > 0
+
+
+async def test_columns_stop_growing_so_the_row_still_reads_as_one_thing(app):
+    async with app.run_test(size=(76, 30)) as pilot:
+        await pilot.pause()
+        await pilot.resize_terminal(400, 30)
+        await pilot.pause()
+        name, bar = app.screen._layout()
+        assert name <= 38 and bar <= 30
+
+
+async def test_a_narrow_pane_still_renders(app):
+    async with app.run_test(size=(60, 20)) as pilot:
+        await pilot.pause()
+        await pilot.resize_terminal(50, 20)
+        await pilot.pause()
+        name, bar = app.screen._layout()
+        assert name >= 22 and bar >= 16
+        assert app.is_running
+
+
+async def test_the_rule_spans_the_pane(app):
+    async with app.run_test(size=(76, 30)) as pilot:
+        await pilot.pause()
+        before = str(app.screen.query_one("#rule").content).count("━")
+        await pilot.resize_terminal(140, 30)
+        await pilot.pause()
+        after = str(app.screen.query_one("#rule").content).count("━")
+        assert after > before, "the separator was pinned at 68 columns"
+
+
+async def test_one_unknown_slug_is_singular(app, monkeypatch):
+    async with app.run_test(size=(76, 30)) as pilot:
+        await pilot.pause()
+        r = app.screen
+        monkeypatch.setattr(type(r.store), "classify",
+                            lambda self, paths, ignore: {"stranded": ["x"]})
+        r._chrome()
+        foot = str(r.query_one("#foot").content)
+        assert "1 unknown slug" in foot and "1 unknown slugs" not in foot

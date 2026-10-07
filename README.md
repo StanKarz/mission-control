@@ -200,7 +200,7 @@ changes how you work, and not for the better.
 ## Development
 
 ```sh
-uv run pytest        # 102 tests, ~8s
+uv run pytest        # 107 tests, ~9s
 ```
 
 Tests are weighted towards where a bug is silent and expensive: slug encoding,
