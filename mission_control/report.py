@@ -109,6 +109,34 @@ def build(cfg: Config, store: Store, start: date, end: date, label: str) -> Repo
     return Report(start, end, label, out)
 
 
+# One colour per project, so a week with four projects reads as four blocks
+# rather than one wall. Red is left out: it means a failure everywhere else here.
+PALETTE = ("36", "35", "33", "32", "34", "96", "95", "93")
+
+
+def colours_for(names: list[str]) -> dict[str, str]:
+    """Pick a colour per project: stable across runs, distinct within a report.
+
+    Derived from the name, so `robo-scholar` is the same colour every week
+    rather than depending on who else happened to be active. Collisions are
+    walked forward to the next free slot, because telling two projects apart in
+    *this* report matters more than either of them keeping its usual colour.
+    """
+    used: set[str] = set()
+    out: dict[str, str] = {}
+    for n in names:
+        start = sum(n.encode()) % len(PALETTE)
+        pick = PALETTE[start]
+        for i in range(len(PALETTE)):
+            cand = PALETTE[(start + i) % len(PALETTE)]
+            if cand not in used:
+                pick = cand
+                break
+        used.add(pick)
+        out[n] = pick
+    return out
+
+
 def render(rep: Report, colour: bool = True) -> str:
     """Plain text, so it works piped into a file or a shell startup."""
     def c(code: str, s: str) -> str:
@@ -122,18 +150,22 @@ def render(rep: Report, colour: bool = True) -> str:
     if not rep.worked:
         lines.append("\n" + c("2", "  nothing recorded in this period"))
 
+    palette = colours_for([r.project.name for r in rep.worked])
     for r in rep.worked:
+        own = palette[r.project.name]
         lines.append("")
         head = f"▌ {r.project.name}"
         stat = f"{len(r.commits)} commits · {len(r.sessions)} sessions"
         if r.edits:
             stat += f" · {r.edits} edits"
-        lines.append(f"{c('36', head)}  {c('2', stat)}")
+        lines.append(f"{c(own, head)}  {c('2', stat)}")
 
         if r.commits:
             lines.append(c("2", "  pushed"))
             for cm in r.commits[:8]:
-                lines.append(f"    {c('2', cm.sha)}  {cm.subject[:58]}")
+                # the sha carries the project's colour, so the indented lines
+                # stay attached to their heading when a block runs long
+                lines.append(f"    {c(own, cm.sha)}  {cm.subject[:58]}")
             if len(r.commits) > 8:
                 lines.append(c("2", f"    … {len(r.commits) - 8} more"))
 

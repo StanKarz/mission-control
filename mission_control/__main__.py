@@ -1,22 +1,37 @@
-"""mc — mission control.
+"""mc — mission control for several Claude Code projects at once.
 
-    mc                          the TUI
-    mc init                     write a starter config
-    mc recap [days]             sessions, day by day
-    mc week [n]                 what happened this week (or n weeks ago)
-    mc month [n]                same, for a calendar month
-    mc check [project]          run the cmd/gh_pr checks (slow; skipped elsewhere)
-    mc doctor                   session-store health; exit 1 if anything is stranded
-    mc fix [--go]               relink stranded slugs to where projects now live
-    mc mv <project> <dest>      move a project, carrying its sessions with it
-    mc retire <project> [--go]  drop a finished project out of --resume
-    mc brief [path]             phase + next check for the project at path (default: cwd)
-    mc new <name>               scaffold a project dir, add it to progress.toml, launch claude
-    mc add [path]               track a directory that already exists (default: cwd)
-    mc unretire <project>       put a retired project's sessions back
-    mc resume <project>         start/resume the project in the tmux pane to the left
+usage: mc [command] [arguments] [--go]
 
-Anything that mutates is a dry run unless you pass --go.
+  mc                          open the TUI
+
+track
+  mc new <name>               make the directory, track it, start claude in it
+  mc add [path]               track a directory that already exists (cwd by default)
+  mc brief [path]             phase and next check for the project at path
+  mc check [project]          run the cmd/gh_pr checks; the TUI skips them
+
+look back
+  mc recap [days]             sessions, day by day
+  mc week [n]                 what happened this week, or n weeks ago
+  mc month [n]                the same, for a calendar month
+
+move and finish
+  mc resume <project>         start it in the tmux pane to the left
+  mc mv <project> <dest>      move a project, carrying its sessions with it
+  mc retire <project>         drop a finished project out of `claude --resume`
+  mc unretire <project>       put its sessions back
+
+maintain
+  mc doctor                   session-store health; exit 1 if anything is stranded
+  mc fix                      relink stranded slugs to where projects now live
+  mc init                     write a starter config
+
+flags
+  --go                        actually do it; anything that mutates is a dry
+                              run without it
+  --new-window                resume into a new tmux window, not the left pane
+  --print                     print the resume command instead of running it
+  --no-launch                 mc new: don't start claude afterwards
 """
 
 from __future__ import annotations
@@ -99,7 +114,8 @@ def cmd_report(period: str, back: int) -> int:
         start, end = report.week_bounds(back=back)
         label = "THIS WEEK" if back == 0 else f"{back} WEEK(S) AGO"
     rep = report.build(cfg, store, start, end, label)
-    print(report.render(rep, colour=sys.stdout.isatty()))
+    print(report.render(
+        rep, colour=sys.stdout.isatty() and not os.environ.get("NO_COLOR")))
     store.flush()
     return 0
 
@@ -314,11 +330,21 @@ def cmd_resume(name: str, new_win: bool, print_only: bool) -> int:
         print(f"{'✓' if ok else '✗'} {msg}: {cmd}")
         return 0 if ok else 1
 
-    print(f"✗ {target.problem}")
-    print(f"  {cmd}")
+    # Set the command apart on its own line: this is the one thing here you
+    # are going to select and paste, and it was previously indistinguishable
+    # from the explanation around it.
+    print(f"\033[31m✗\033[0m {target.problem}")
+    if target.reason == "no-pane":
+        print("  mc types into the pane to its *left*, so `mc resume` works "
+              "from the roster on the right.")
+        print("  You are in a shell already, so run it here:")
+    print()
+    print(f"    \033[1m{cmd}\033[0m")
+    print()
+    tail = f"or: mc resume {name} --new-window"
     if launcher.copy(cmd):
-        print("  (copied to clipboard)")
-    print("  or: mc resume {} --new-window".format(name))
+        tail = f"copied to clipboard  ·  {tail}"
+    print(f"  \033[2m{tail}\033[0m")
     return 1
 
 
@@ -485,6 +511,9 @@ def main() -> int:
     argv = [a for a in argv
             if a not in ("--go", "--hook", "--no-launch", "--new-window", "--print")]
     cmd = argv[0] if argv else ""
+    if cmd in ("-h", "--help", "help"):
+        print(__doc__.strip())
+        return 0
     if cmd == "recap":
         return cmd_recap(int(argv[1]) if len(argv) > 1 else 1)
     if cmd == "doctor":
@@ -528,11 +557,11 @@ def main() -> int:
             return 2
         return cmd_new(argv[1], launch)
     if cmd:
-        # Printing bare help for an unrecognised word reads as "here are some
-        # commands" rather than "that is not one of them" — which is exactly
-        # how a stale install presents itself.
-        print(f"unknown command: {cmd}\n", file=sys.stderr)
-        print(__doc__)
+        # Don't dump the whole list: printing bare help for an unrecognised word
+        # reads as "here are some commands" rather than "that is not one of
+        # them", which is exactly how a stale install presents itself.
+        print(f"mc: unknown command {cmd!r}", file=sys.stderr)
+        print("try: mc --help", file=sys.stderr)
         return 2
     from .app import MissionControl
     MissionControl().run()

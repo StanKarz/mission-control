@@ -1,32 +1,36 @@
 # mission control — guide
 
-Everything in one place: what it is, the commands, the daily flow, and the
-gotchas that cost real time to discover.
+If you read one section, read [Flow](#flow) — that's the daily loop, and it's
+about a page. The rest is reference you can come back to: [commands](#commands),
+[keys](#keys), [statuses](#statuses), and the [gotchas](#gotchas) that cost real
+time to find.
 
 ---
 
 ## What it actually is
 
-Three things that happen to share a data source.
+One screen for several projects at once, answering: what am I working on, how
+far through is each one, what's next, and is anything running right now.
 
-**1. A repair tool for Claude Code sessions.** Claude Code names its session
-directory after the absolute path you launched from. Move the project and the
-link silently breaks — history still on disk, unreachable. `doctor` finds it,
-`fix` repairs it, `mv` prevents it.
+Three parts make that work.
 
-**2. A progress tracker that can't lie.** Every checklist item is a *predicate*
-the app evaluates, not a box you tick. A percentage is measured on every open,
-so it can't drift from reality.
+**A progress tracker that can't lie.** Every checklist item is a *predicate* the
+app evaluates, not a box you tick, so the percentage is measured on every open
+and can't drift.
 
-**3. A launcher.** Highlight a project, press `o`, and the resume command is
-typed into the tmux pane on your left.
+**A launcher.** Highlight a project, press `o`, and the resume command is typed
+into the tmux pane on your left.
+
+**A repair tool, when you need one.** Claude Code names each session directory
+after the absolute path you launched from, so moving a project silently breaks
+the link. `doctor` finds it, `fix` repairs it, `mv` prevents it.
 
 It reads two sources and owns neither:
 
-| source | holds | who writes it |
-|---|---|---|
-| `~/.config/mission-control/progress.toml` | **intent** — what you're working on, what "done" means | you, and `mc new` / `/init-project` |
-| `~/.claude/projects/` | **activity** — sessions, titles, edits | Claude Code. Read-only to us, except `fix`/`mv`/`retire` |
+| source                                      | holds                                                         | who writes it                                                 |
+| ------------------------------------------- | ------------------------------------------------------------- | ------------------------------------------------------------- |
+| `~/.config/mission-control/progress.toml` | **intent** — what you're working on, what "done" means | you, and`mc new` / `/init-project`                        |
+| `~/.claude/projects/`                     | **activity** — sessions, titles, edits                 | Claude Code. Read-only to us, except`fix`/`mv`/`retire` |
 
 Plus `git log` for commits. **Nothing about activity is ever recorded in the
 config** — it's derived every time.
@@ -35,70 +39,57 @@ config** — it's derived every time.
 
 ## Commands
 
-Everything that mutates is a **dry run unless you pass `--go`**, archives to
-`~/.claude/archive/` first, and verifies transcript line counts after.
+`mc --help` lists them all. Two rules cover most of the surface:
 
-### Looking
+- Anything that mutates is a **dry run unless you pass `--go`**. It archives to
+  `~/.claude/archive/` first and verifies transcript line counts after.
+- `mc` with no arguments opens the TUI. Everything else prints and exits, so it
+  composes with pipes and shell startup files.
 
-```sh
-mc                    # the TUI
-mc doctor             # session-store health; exit 1 if anything is stranded
-mc week      [n]      # what happened this week (or n weeks back)
-mc month     [n]      # same, calendar month
-mc recap     [days]   # sessions day by day
-mc brief     [path]   # phase + next check for one project
-```
-
-### Doing
+The four you'll actually type daily:
 
 ```sh
-mc new <name>                    # mkdir + git init + config entry + launch claude
-mc add [path]                    # track a directory that already exists (default: cwd)
-mc check [project]               # run the cmd/gh_pr checks (see gotcha 7)
-mc resume <project>              # start/resume in the left tmux pane
-mc mv <project> <dest> --go      # move a project, carrying its sessions
-mc fix --go                      # relink slugs stranded by a move done elsewhere
-mc retire <project> --go         # drop a finished project out of --resume
-mc unretire <project> --go       # ...and put it back
-mc init                          # write a starter config
+mc                    # the roster
+mc week               # what happened this week
+mc check [project]    # run the cmd/gh_pr checks the TUI skips
+mc add                # track the directory you're standing in
 ```
 
-Useful flags: `--print` (show the command, don't run it), `--new-window`
-(open in a fresh tmux window instead of the left pane), `--no-launch`
-(`mc new` without dropping into Claude), `--hook` (`mc brief` as JSON for
-`SessionStart`).
+Useful flags: `--print` (show the command, don't run it), `--new-window` (open
+in a fresh tmux window instead of the left pane), `--no-launch` (`mc new`
+without dropping into Claude), `--hook` (`mc brief` as JSON for `SessionStart`).
 
 ### Keys
 
 **Roster**
 
-| | |
-|---|---|
-| `j` `k` or arrows | move — the highlighted row expands |
-| `g` `G` | top / bottom |
-| `⏎` | open the detail page |
-| `o` | resume in the left pane |
-| `w` | resume in a new tmux window |
-| `c` | run this project's `cmd`/`gh_pr` checks |
-| `s` | change status (does not touch sessions) |
-| `a` | reveal finished and parked projects |
-| `m` | month checkpoint |
-| `x` | retire (asks first) |
-| `r` | refresh |
-| `q` or `ctrl+c` | quit |
+|                       |                                            |
+| --------------------- | ------------------------------------------ |
+| `j` `k` or arrows | move — the highlighted row expands        |
+| `g` `G`           | top / bottom                               |
+| `⏎`                | open the detail page                       |
+| `o`                 | resume in the left pane                    |
+| `w`                 | resume in a new tmux window                |
+| `c`                 | run this project's`cmd`/`gh_pr` checks |
+| `s`                 | change status (does not touch sessions)    |
+| `a`                 | reveal finished and parked projects        |
+| `m`                 | month checkpoint                           |
+| `x`                 | retire (asks first)                        |
+| `r`                 | refresh                                    |
+| `q` or `ctrl+c`   | quit                                       |
 
 The arrow keys `up`/`down` work everywhere `j`/`k` do, and `home`/`end` alongside
 `g`/`G`.
 
 **Detail page**
 
-| | |
-|---|---|
+|                       |                                                    |
+| --------------------- | -------------------------------------------------- |
 | `j` `k` or arrows | move a cursor through checks, commits and sessions |
-| `space` | tick the selected `manual` check off, or back on |
-| `⏎` | resume |
-| `w` | resume in a new tmux window |
-| `esc` | back |
+| `space`             | tick the selected`manual` check off, or back on  |
+| `⏎`                | resume                                             |
+| `w`                 | resume in a new tmux window                        |
+| `esc`               | back                                               |
 
 Whatever is selected expands: a commit shows the files it touched, a session
 shows which files it edited, a check explains why it isn't passing.
@@ -128,9 +119,9 @@ project *known* (a `[projects."name"]` block). `/init-project` defines what
 *done* means (the checks). You need both.
 
 Write a `CLAUDE.md` to scope it, then **`/init-project`** inside Claude. It
-interviews you about the current phase and what would make it done, then writes
-real checks into the config. It only does the phase you're actually on — future
-phases are guesses, and guesses are what this replaces.
+works out what *done* means for the phase you're on and writes it into the
+config as checks the app can evaluate. It covers the current phase only —
+future phases are guesses, and guesses are what this replaces.
 
 A one-off session that isn't a project? **Don't add it at all.** Unlisted means
 invisible; `doctor` will note its sessions under `UNTRACKED`, which counts as
@@ -247,14 +238,14 @@ Unlike everything `mc` does, it cannot be undone.
 
 ## Statuses
 
-| status | meaning | on the roster? |
-|---|---|---|
-| `active` | working on it | yes |
-| `blocked` | waiting on something external (a PR, a review) | yes |
-| `paused` | not touching it now, but coming back | yes, quieter |
-| `done` | finished | behind `a` |
-| `archived` | filed away, not coming back soon | behind `a` |
-| `ignored` | not a project at all | never |
+| status       | meaning                                        | on the roster? |
+| ------------ | ---------------------------------------------- | -------------- |
+| `active`   | working on it                                  | yes            |
+| `blocked`  | waiting on something external (a PR, a review) | yes            |
+| `paused`   | not touching it now, but coming back           | yes, quieter   |
+| `done`     | finished                                       | behind`a`    |
+| `archived` | filed away, not coming back soon               | behind`a`    |
+| `ignored`  | not a project at all                           | never          |
 
 **`paused` vs `archived`** is the distinction worth getting right. Paused work
 is still yours — it stays on the roster so you don't forget it exists, just
@@ -269,92 +260,58 @@ never mine".
 
 ## Gotchas
 
-Each of these cost real time. Most are properties of Claude Code, not of this
-app.
+Each of these cost real time, and most are properties of Claude Code rather than
+of this app.
 
-**1. Slug encoding is lossy — never decode it.** `/`, `_` and `.` all become
-`-`, so `-Users-you-my-app` could be `my/app`, `my-app` or `my_app`. Always
-encode *forwards* from a known path; recover unknown paths from the `cwd` field
-inside a transcript.
+**1. `cmd` and `gh_pr` checks don't run by themselves.** They shell out or hit
+the network, so they never run in a render path — the app would stall every few
+seconds. Press `c`, or run `mc check`. Results are cached and count towards the
+percentage, with the last-run time shown. A check that has never run reports as
+unresolved rather than failing, so the number never overstates.
 
-**2. A live session pins its slug for the whole process lifetime.** Claude Code
-captures its cwd *string* at session start and never re-reads it. Move a project
-under a running session and it keeps appending to the old, now-stranded slug.
-Checking with `ps` doesn't work (cwd isn't on the command line) and `lsof` lies
-(a process's cwd follows the inode, so it reports the *new* path). The reliable
-signal is a recent write. `mv`, `fix` and `retire` all refuse on live slugs.
+**2. `space` only ticks `manual` checks.** Overriding a `path` or `cmd` check by
+hand would leave a stored answer sitting beside a predicate that disagrees with
+it, and no way to tell later which one you believed. If a check keeps being
+wrong, fix the predicate or change its `type` to `manual` deliberately.
 
-**3. `--resume` selects by directory alone.** A transcript whose internal `cwd`
-points elsewhere still resumes fine from whichever slug directory it sits in.
-That's what makes repair a plain `mv`. Mixed `cwd` values in one transcript are
-normal, not damage.
+**3. `mc` discovers nothing.** The roster is exactly what `progress.toml` lists.
+`project_roots` only feeds `mc fix`, when it searches for a project that moved,
+and `mc new`.
 
-**4. `mtime` is not evidence of work.** It records when a file was last
-*written* — which a move, a copy or a backup all do. Filter on the `timestamp`
-values inside, or a recap reports yesterday's session as today's.
+**4. Anything that mutates refuses while a session is live.** `mv`, `fix` and
+`retire` all check for recent writes first. A running session keeps writing to
+its old slug after a move, so repairing it mid-flight just gets undone and
+splits the transcript across two places.
 
 **5. Two slug dirs can hold the same session id, with divergent content.** When
-a live session writes to its old slug after a move, you get two continuations of
-one session where **neither contains the other**. Resolving that by size or
-mtime silently destroys whichever loses. `fix`/`mv` detect it, report
-`CONFLICT`, and leave both files alone.
+that happens neither file contains the other, and resolving it by size or date
+destroys whichever loses. `fix` and `mv` report `CONFLICT` and leave both alone
+for you to sort out by hand.
 
-**6. macOS is case-insensitive.** `~/Projects/x` and `~/projects/x` are one
-directory with two different slugs. Renaming one to the other is a rename onto
-itself and needs a temp hop, or a naive implementation destroys data.
+**6. Sending keys to a busy tmux pane is prompt injection.** If Claude is
+running in the target pane, a resume command typed there is submitted as a
+*prompt* rather than executed. `mc` checks the pane's foreground command against
+a shell allowlist and refuses otherwise, offering `w` instead. Claude Code sets
+its process title to its own version, so tmux calls that pane `2.1.284`; `mc`
+translates it back to `claude` in the message.
 
-**7. `cmd` and `gh_pr` checks don't run by themselves.** They shell out or hit
-the network, so they never run in a render path — otherwise the app would stall
-every few seconds. Press `c` or run `mc check`. Results are cached and count
-towards the percentage, with the last-run time shown. A check that's never been
-run reports as unresolved, never as failing, so the number never overstates.
+**7. `mc resume` only works from the roster pane.** It types into the pane on
+its *left*, so running it in the work pane itself reports `no pane to the left`.
+You're in a shell there already — run the command it prints.
 
-**8. `mc` discovers nothing.** The roster is exactly what `progress.toml` lists.
-`project_roots` only feeds `mc fix` (searching for moved projects) and `mc new`.
-
-**9. A project's sessions aren't one directory.** A sub-repo inside a project
-gets its own slug. `mc mv` re-slugs the whole subtree; a naive move would
-strand the nested one.
-
-**10. `SessionStart` hooks need a specific JSON envelope.** Plain stdout is
-silently dropped — no error, just nothing. `mc brief --hook` emits the correct
+**8. `SessionStart` hooks need a specific JSON envelope.** Plain stdout is
+silently dropped: no error, just nothing. `mc brief --hook` emits the correct
 `hookSpecificOutput.additionalContext` shape.
 
-**11. Sending keys to a busy tmux pane is prompt injection.** If Claude is
-running in the target pane, a resume command typed there is submitted as a
-*prompt*, not executed. `mc` checks `pane_current_command` against a shell
-allowlist and refuses otherwise, offering `w` instead.
+**9. `uv tool install --force` can silently do nothing.** It skips the rebuild
+when the version string is unchanged, so a reinstall leaves the old code in place
+and your fix appears not to work. This repo is installed with
+`uv tool install --editable .` so `mc` always runs current source.
 
-**11a. tmux resolves `{left-of}` against the _active_ pane, not the asking
-one.** Usually the same pane, but not after `o` moves focus to the new work
-pane — a later query then answers relative to the wrong pane, and can wrap
-around to point back at the roster itself. `mc` reads the pane layout and picks
-the nearest pane whose right edge touches its own, which has no such ambiguity.
-
-**12. `uv tool install --force` can silently do nothing.** It skips the rebuild
-when the version string is unchanged, so a "reinstall" leaves the old code in
-place and any fix appears not to work. This repo is installed with
-`uv tool install --editable .`, so `mc` always runs the current source. If you
-ever reinstall it non-editable, bump `version` in `pyproject.toml` first.
-
-**13a. Claude Code's process title is its version number.** tmux answers
-`2.1.284` rather than `claude` for `pane_current_command`, so a pane running
-Claude looks like an unknown program. It changes nothing about safety — the
-shell allowlist is what decides whether keys can be sent — but `mc` translates a
-bare version back to `claude` in the message, because "claude is running there"
-tells you to press `w` and "2.1.284 is running there" reads like a broken
-install.
-
-**13. `ai-title` is a free summary.** Claude Code writes its own session title
-into the transcript, so nothing here needs an LLM to summarise what you did.
-
-**14. `space` only ticks `manual` checks, on purpose.** Being able to override a
-`path` or `cmd` check by hand sounds convenient and isn't: you would end up with
-a stored answer sitting next to a predicate that disagrees with it, and no way
-to tell later which one you actually believed — which is the exact rot that
-checks-as-predicates exists to prevent. If a check keeps being wrong, fix the
-predicate, or change its `type` to `manual` deliberately. `mc` refuses with a
-warning rather than silently doing nothing.
+**10. Transcripts are deleted after 30 days.** `cleanupPeriodDays` defaults to
+30, keyed on last activity, which is why `mc month 2` can come back empty.
+`~/.claude/archive/` is outside the sweep, so retiring a project keeps its
+sessions indefinitely.
 
 ---
 
@@ -375,7 +332,7 @@ Caches are disposable — delete them and they rebuild.
 ## Development
 
 ```sh
-uv run pytest        # 78 tests, ~7s
+uv run pytest        # 94 tests, ~8s
 ```
 
 Tests are weighted towards where a bug is silent and expensive: slug encoding,

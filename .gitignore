@@ -22,3 +22,6 @@ mockup.py
 # Screenshots rendered from real data — the sanitised demo shots in
 # shots/{roster,detail,checkpoint}.* are the ones docs reference.
 shots/live-*
+
+# personal notes, not published
+NOTES.md

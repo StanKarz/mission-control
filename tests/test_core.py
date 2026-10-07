@@ -533,3 +533,68 @@ def test_other_busy_commands_keep_their_real_name(monkeypatch, cmd):
     monkeypatch.setenv("TMUX_PANE", "%9")
     monkeypatch.setattr(launcher, "_tmux", lambda *a, **k: (0, cmd))
     assert launcher.resolve_target().problem.startswith(f"{cmd} is running there")
+
+
+# ── the CLI's front door ─────────────────────────────────────────────────
+def _run(argv, monkeypatch) -> int:
+    from mission_control import __main__ as cli
+    monkeypatch.setattr("sys.argv", ["mc", *argv])
+    return cli.main()
+
+
+@pytest.mark.parametrize("flag", ["--help", "-h", "help"])
+def test_help_prints_usage_to_stdout_and_exits_zero(flag, monkeypatch, capsys):
+    assert _run([flag], monkeypatch) == 0
+    out = capsys.readouterr()
+    assert "usage: mc" in out.out
+    assert out.err == "", "help is not an error"
+
+
+def test_unknown_command_is_an_error_that_points_at_help(monkeypatch, capsys):
+    """It used to print the whole command list, which reads as "here are some
+    commands" rather than "that is not one of them"."""
+    assert _run(["wat"], monkeypatch) == 2
+    out = capsys.readouterr()
+    assert "unknown command 'wat'" in out.err
+    assert "mc --help" in out.err
+    assert "mc doctor" not in out.err, "don't dump the whole list on a typo"
+
+
+def test_every_command_in_the_usage_text_actually_dispatches():
+    """The usage block is hand-written, so it can drift from the dispatch."""
+    import re
+    from mission_control import __main__ as cli
+    named = set(re.findall(r"^  mc ([a-z]+)", cli.__doc__, re.M))
+    source = Path(cli.__file__).read_text()
+    for name in named:
+        assert f'"{name}"' in source, f"usage lists `mc {name}` but nothing dispatches it"
+
+
+# ── report colours ───────────────────────────────────────────────────────
+def test_each_project_gets_its_own_colour_in_a_report():
+    from mission_control.report import colours_for
+    names = ["blog", "robo-scholar", "sql-cheat-sheet", "tui-mission-control"]
+    got = colours_for(names)
+    assert len(set(got.values())) == len(names), "two projects shared a colour"
+
+
+def test_a_projects_colour_is_the_same_every_run():
+    """Derived from the name, not from position, so a project keeps its colour
+    week to week. It only moves when another project got there first, which is
+    the price of guaranteeing they differ inside one report."""
+    from mission_control.report import colours_for
+    week1 = colours_for(["blog", "robo-scholar", "tui-mission-control"])
+    week2 = colours_for(["robo-scholar", "blog", "tui-mission-control"])
+    assert week1 == week2, "colour must not depend on report order"
+
+    # a project that nobody collides with keeps its colour as the report grows
+    alone = colours_for(["robo-scholar"])["robo-scholar"]
+    assert colours_for(["blog", "robo-scholar"])["robo-scholar"] == alone
+
+
+def test_more_projects_than_colours_still_renders(monkeypatch):
+    from mission_control import report
+    names = [f"p{i}" for i in range(len(report.PALETTE) + 3)]
+    got = report.colours_for(names)
+    assert len(got) == len(names)
+    assert all(v in report.PALETTE for v in got.values())
