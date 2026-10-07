@@ -592,9 +592,33 @@ def test_a_projects_colour_is_the_same_every_run():
     assert colours_for(["blog", "robo-scholar"])["robo-scholar"] == alone
 
 
-def test_more_projects_than_colours_still_renders(monkeypatch):
+def test_more_projects_than_colours_still_renders():
     from mission_control import report
-    names = [f"p{i}" for i in range(len(report.PALETTE) + 3)]
+    pal = report.palette()
+    names = [f"p{i}" for i in range(len(pal) + 3)]
     got = report.colours_for(names)
     assert len(got) == len(names)
-    assert all(v in report.PALETTE for v in got.values())
+    assert all(v in pal for v in got.values())
+
+
+def test_no_two_palette_entries_are_shades_of_one_colour():
+    """The first palette paired 36/96 and 33/93 — the normal and bright form of
+    one hue, which themes render as the same colour twice. Two projects then
+    looked identical even though the code had given them different codes."""
+    from mission_control import report
+    for pal in (report.PALETTE, report.PALETTE_8):
+        bare = [c.split(";")[-1] for c in pal]
+        assert len(set(bare)) == len(bare)
+        # 3x and 9x are the same hue in the basic range
+        basic = [int(c) for c in bare if len(c) == 2 and c.isdigit()]
+        assert not any((a % 10) == (b % 10) and a != b
+                       for a in basic for b in basic), "bright/normal pair in palette"
+
+
+def test_falls_back_to_basic_colours_without_256_support(monkeypatch):
+    from mission_control import report
+    monkeypatch.setenv("TERM", "vt100")
+    monkeypatch.delenv("COLORTERM", raising=False)
+    assert report.palette() == report.PALETTE_8
+    monkeypatch.setenv("TERM", "xterm-256color")
+    assert report.palette() == report.PALETTE

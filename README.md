@@ -206,7 +206,7 @@ changes how you work, and not for the better.
 ## Development
 
 ```sh
-uv run pytest        # 94 tests, ~8s
+uv run pytest        # 96 tests, ~8s
 ```
 
 Tests cover the logic where a bug is silent and expensive: slug encoding,

@@ -332,7 +332,7 @@ Caches are disposable — delete them and they rebuild.
 ## Development
 
 ```sh
-uv run pytest        # 94 tests, ~8s
+uv run pytest        # 96 tests, ~8s
 ```
 
 Tests are weighted towards where a bug is silent and expensive: slug encoding,

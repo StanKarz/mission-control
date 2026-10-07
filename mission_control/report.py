@@ -9,6 +9,8 @@ the commit message *is* the summary, written by whoever made the change.
 
 from __future__ import annotations
 
+import os
+
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 
@@ -110,8 +112,30 @@ def build(cfg: Config, store: Store, start: date, end: date, label: str) -> Repo
 
 
 # One colour per project, so a week with four projects reads as four blocks
-# rather than one wall. Red is left out: it means a failure everywhere else here.
-PALETTE = ("36", "35", "33", "32", "34", "96", "95", "93")
+# rather than one wall.
+#
+# Hues spaced around the wheel, not brightness variants of one another: the
+# first version of this paired 36/96 and 33/93, which nearly every terminal
+# theme renders as the same colour twice, so two projects looked identical.
+# Red is left out — it means failure everywhere else here.
+PALETTE = ("38;5;80",    # turquoise
+           "38;5;215",   # orange
+           "38;5;141",   # violet
+           "38;5;114",   # green
+           "38;5;210",   # salmon
+           "38;5;68",    # steel blue
+           "38;5;228")   # pale yellow
+
+# Terminals without 256 colours get distinct basic hues — fewer of them, still
+# no bright/normal pairs.
+PALETTE_8 = ("36", "35", "33", "32", "34")
+
+
+def palette() -> tuple[str, ...]:
+    """The widest set of distinguishable colours this terminal can show."""
+    if "256color" in os.environ.get("TERM", "") or os.environ.get("COLORTERM"):
+        return PALETTE
+    return PALETTE_8
 
 
 def colours_for(names: list[str]) -> dict[str, str]:
@@ -122,13 +146,14 @@ def colours_for(names: list[str]) -> dict[str, str]:
     walked forward to the next free slot, because telling two projects apart in
     *this* report matters more than either of them keeping its usual colour.
     """
+    pal = palette()
     used: set[str] = set()
     out: dict[str, str] = {}
     for n in names:
-        start = sum(n.encode()) % len(PALETTE)
-        pick = PALETTE[start]
-        for i in range(len(PALETTE)):
-            cand = PALETTE[(start + i) % len(PALETTE)]
+        start = sum(n.encode()) % len(pal)
+        pick = pal[start]
+        for i in range(len(pal)):
+            cand = pal[(start + i) % len(pal)]
             if cand not in used:
                 pick = cand
                 break
