@@ -1,7 +1,8 @@
 # mission control — guide
 
-If you read one section, read [Flow](#flow) — that's the daily loop, and it's
-about a page. The rest is reference you can come back to: [commands](#commands),
+If you read one section, read [Flow](#flow). That's the daily loop.
+
+The rest is reference you can come back to: [commands](#commands),
 [keys](#keys), [statuses](#statuses), and the [gotchas](#gotchas) that cost real
 time to find.
 
@@ -9,7 +10,7 @@ time to find.
 
 ## What it actually is
 
-One screen for several projects at once, answering: what am I working on, how
+One tool to manage several projects at once, answering: what am I working on, how
 far through is each one, what's next, and is anything running right now.
 
 Three parts make that work.
@@ -29,11 +30,11 @@ It reads two sources and owns neither:
 
 | source                                      | holds                                                         | who writes it                                                 |
 | ------------------------------------------- | ------------------------------------------------------------- | ------------------------------------------------------------- |
-| `~/.config/mission-control/progress.toml` | **intent** — what you're working on, what "done" means | you, and`mc new` / `/init-project`                        |
-| `~/.claude/projects/`                     | **activity** — sessions, titles, edits                 | Claude Code. Read-only to us, except`fix`/`mv`/`retire` |
+| `~/.config/mission-control/progress.toml` | **intent**: what you're working on, what "done" means | you, and `mc new` / `/init-project`                        |
+| `~/.claude/projects/`                     | **activity**: sessions, titles, edits                 | Claude Code. Read-only to us, except `fix`/`mv`/`retire` |
 
 Plus `git log` for commits. **Nothing about activity is ever recorded in the
-config** — it's derived every time.
+config.** It's derived every time.
 
 ---
 
@@ -65,12 +66,12 @@ without dropping into Claude), `--hook` (`mc brief` as JSON for `SessionStart`).
 
 |                       |                                            |
 | --------------------- | ------------------------------------------ |
-| `j` `k` or arrows | move — the highlighted row expands        |
+| `j` `k` or arrows | move; the highlighted row expands         |
 | `g` `G`           | top / bottom                               |
 | `⏎`                | open the detail page                       |
 | `o`                 | resume in the left pane                    |
 | `w`                 | resume in a new tmux window                |
-| `c`                 | run this project's`cmd`/`gh_pr` checks |
+| `c`                 | run this project's `cmd`/`gh_pr` checks |
 | `s`                 | change status (does not touch sessions)    |
 | `a`                 | reveal finished and parked projects        |
 | `m`                 | month checkpoint                           |
@@ -86,7 +87,7 @@ The arrow keys `up`/`down` work everywhere `j`/`k` do, and `home`/`end` alongsid
 |                       |                                                    |
 | --------------------- | -------------------------------------------------- |
 | `j` `k` or arrows | move a cursor through checks, commits and sessions |
-| `space`             | tick the selected`manual` check off, or back on  |
+| `space`             | tick the selected `manual` check off, or back on  |
 | `⏎`                | resume                                             |
 | `w`                 | resume in a new tmux window                        |
 | `esc`               | back                                               |
@@ -107,7 +108,7 @@ mc new my-thing          # creates the dir, git init, adds it to progress.toml
                          # then drops you into claude
 ```
 
-Already have the directory? `mc new` refuses to touch it — use **`mc add`**
+Already have the directory? `mc new` refuses to touch it. Use **`mc add`**
 instead, which takes the current directory by default:
 
 ```sh
@@ -120,8 +121,8 @@ project *known* (a `[projects."name"]` block). `/init-project` defines what
 
 Write a `CLAUDE.md` to scope it, then **`/init-project`** inside Claude. It
 works out what *done* means for the phase you're on and writes it into the
-config as checks the app can evaluate. It covers the current phase only —
-future phases are guesses, and guesses are what this replaces.
+config as checks the app can evaluate. It covers the current phase only, since
+future phases are guesses and guesses are what this replaces.
 
 A one-off session that isn't a project? **Don't add it at all.** Unlisted means
 invisible; `doctor` will note its sessions under `UNTRACKED`, which counts as
@@ -129,30 +130,58 @@ zero problems.
 
 ### A normal day
 
+A shell function worth having:
+
+```sh
+work() { tmux split-window -h -l 40% -d "mc"; }
+```
+
 ```sh
 work        # splits tmux: work on the left, roster on the right
 ```
 
 Glance at the roster. The highlighted row tells you the next unmet check.
-Press `o` to resume that project — and the roster switches to that project's
+Press `o` to resume that project, and the roster switches to that project's
 detail, so the right-hand pane becomes its dashboard. `esc` goes back.
 
 `o` builds the layout if it needs to. Running `mc` alone in a window? It opens a
 work pane to the *left* at 60% and keeps itself on the right. If a left pane
 already exists and is an idle shell, it types there instead. If Claude is
-already running there it refuses — keystrokes would be submitted as a *prompt* —
-and `w` opens a new window instead.
+already running there it refuses, since keystrokes would be submitted as a
+*prompt*, and `w` opens a new window instead.
 
 During a long run, the roster shows `◆ working 4m` or `◆ needs you`.
 
 When you've done something a `cmd` check measures, press `c`. `path` and
 `git_tag` checks re-evaluate on every open, so they need nothing.
 
-For the things nothing can measure — an outline reorganised, a decision made —
+For the things nothing can measure, an outline reorganised or a decision made,
 use a `manual` check and tick it off by hand: `⏎` into the project, `j`/`k` to
 the check, `space`. Manual checks render as `☐` / `☑` rather than `✔` / `✖`, so
 you can see at a glance which rows are yours to tick and which are measured.
-`space` deliberately refuses to touch the other four types (see gotcha 14).
+`space` deliberately refuses to touch the other four types (gotcha 2).
+
+### Adding a check
+
+Checks are plain TOML, so the quickest way to add one is to write it:
+
+```toml
+[[projects."robo-scholar".checks]]
+name  = "eval set reviewed"
+type  = "manual"
+done  = false
+```
+
+A `manual` check needs those three fields. The other four types take `value`
+instead of `done`, holding the path, tag, shell command or PR. Press `r` in the
+roster to pick it up.
+
+Re-running **`/init-project`** is the other route and the better one when the
+phase has moved on. It appends rather than replaces, and it's meant to be run
+once per phase rather than once per project.
+
+Aim for three to six checks per phase. Fewer and the percentage is too coarse to
+mean anything, more and it's busywork.
 
 ### Weekly and monthly
 
@@ -162,23 +191,23 @@ mc month
 ```
 
 `m` in the roster opens the same month view, plus space to write answers to
-`checkpoint_questions` if you've set any — editable only in the last three days
-of the month, inert the rest of the time by design. `ctrl+s` saves, `tab` moves
+`checkpoint_questions` if you've set any, editable only in the last three days
+of the month and inert the rest of the time, by design. `ctrl+s` saves, `tab` moves
 between answers.
 
 ### When things move
 
-Prefer `mc mv <project> <dest> --go` — it moves the directory *and* re-slugs
+Prefer `mc mv <project> <dest> --go`. It moves the directory *and* re-slugs
 every session beneath it. If you moved something with plain `mv`, run
 `mc doctor` then `mc fix --go`.
 
-**Quit any Claude session in a project before moving it** (gotcha 2).
+**Quit any Claude session in a project before moving it** (gotcha 4).
 
 ### When something is finished
 
 Two separate things, and it's worth keeping them apart:
 
-**`status = "done"`** is about the *roster*. Press **`s`** and pick it — the
+**`status = "done"`** is about the *roster*. Press **`s`** and pick it: the
 project drops off the default view and lives behind `a`. That is already the
 "completed projects" list; there is no separate menu because `a` is the menu.
 
@@ -189,7 +218,7 @@ Nothing is deleted.
 
 So: `s` when you just want to say what something is, `x` when you are finished
 with it and want its sessions out of the way too. Marking done alone is enough
-to tidy the roster — a finished project with twenty sessions is the one worth
+to tidy the roster; a finished project with twenty sessions is the one worth
 retiring as well.
 
 ```
@@ -198,8 +227,8 @@ a          look at everything you have finished
 x          done *and* archive the sessions (asks first)
 ```
 
-With `a` on, retiring does not make the row disappear — `a` is the view that
-shows finished work, so a project you just finished belongs in it. What changes
+With `a` on, retiring does not make the row disappear, since `a` is the view
+that shows finished work, so a project you just finished belongs in it. What changes
 is the status, and the row sorts down into the done group. The cursor follows
 it, and the notification says which of the two halves happened: a project with
 no sessions on disk reports `no sessions to archive`.
@@ -211,7 +240,7 @@ directory, including nested sub-repos, and sets the status back to `active`.
 
 Different from finished, and `x` is the wrong key for it. Retiring moves
 sessions to `~/.claude/archive/`, which sits outside Claude Code's retention
-sweep, so it keeps them for good — right for a project you might reopen,
+sweep, so it keeps them for good: right for a project you might reopen,
 backwards for one you are binning.
 
 Tracked project:
@@ -226,8 +255,8 @@ Dropping the block is the step that matters. Leave it in and `doctor` prints
 
 An untracked one-off needs neither step: delete the directory and stop. Claude
 Code deletes the transcripts after `cleanupPeriodDays` (30 by default), so the
-slug goes by itself. Until then `doctor` lists it under STRANDED and exits 1 —
-noise, not a problem, and `mc fix` will decline to guess where it went.
+slug goes by itself. Until then `doctor` lists it under STRANDED and exits 1.
+That is noise rather than a problem, and `mc fix` declines to guess where it went.
 
 To clear one sooner, `claude project purge ~/Desktop/projects/<name>` deletes
 the transcripts, the matching prompt history and the trust entry. It prints a
@@ -243,12 +272,12 @@ Unlike everything `mc` does, it cannot be undone.
 | `active`   | working on it                                  | yes            |
 | `blocked`  | waiting on something external (a PR, a review) | yes            |
 | `paused`   | not touching it now, but coming back           | yes, quieter   |
-| `done`     | finished                                       | behind`a`    |
-| `archived` | filed away, not coming back soon               | behind`a`    |
+| `done`     | finished                                       | behind `a`   |
+| `archived` | filed away, not coming back soon               | behind `a`   |
 | `ignored`  | not a project at all                           | never          |
 
 **`paused` vs `archived`** is the distinction worth getting right. Paused work
-is still yours — it stays on the roster so you don't forget it exists, just
+is still yours, so it stays on the roster where you won't forget it exists, just
 rendered quietly and sorted below live work. Archived work is filed away and
 only appears under `a`.
 
@@ -264,7 +293,7 @@ Each of these cost real time, and most are properties of Claude Code rather than
 of this app.
 
 **1. `cmd` and `gh_pr` checks don't run by themselves.** They shell out or hit
-the network, so they never run in a render path — the app would stall every few
+the network, so they never run in a render path; the app would stall every few
 seconds. Press `c`, or run `mc check`. Results are cached and count towards the
 percentage, with the last-run time shown. A check that has never run reports as
 unresolved rather than failing, so the number never overstates.
@@ -297,7 +326,7 @@ translates it back to `claude` in the message.
 
 **7. `mc resume` only works from the roster pane.** It types into the pane on
 its *left*, so running it in the work pane itself reports `no pane to the left`.
-You're in a shell there already — run the command it prints.
+You're in a shell there already, so run the command it prints.
 
 **8. `SessionStart` hooks need a specific JSON envelope.** Plain stdout is
 silently dropped: no error, just nothing. `mc brief --hook` emits the correct
@@ -318,29 +347,18 @@ sessions indefinitely.
 ## Where things live
 
 ```
-~/.config/mission-control/progress.toml   config (symlinked to ~/dotfiles)
-~/.claude/projects/<slug>/*.jsonl         sessions — read-only to us
+~/.config/mission-control/progress.toml   config (keep it in your dotfiles)
+~/.claude/projects/<slug>/*.jsonl         sessions, read-only to us
 ~/.claude/archive/                        everything fix/mv/retire moved
 ~/.cache/mission-control/                 parsed-session and check caches
 ~/.claude/skills/init-project/            the /init-project skill
 ```
 
-Caches are disposable — delete them and they rebuild.
+Caches are disposable: delete them and they rebuild.
 
 ---
 
 ## Development
 
-```sh
-uv run pytest        # 96 tests, ~8s
-```
-
-Tests are weighted towards where a bug is silent and expensive: slug encoding,
-reconcile planning, the checks engine, period arithmetic, tmux target
-resolution. There are also smoke
-tests that render every screen and exercise the key map — added after a
-`NameError` in the detail view got shipped, which pure-logic tests structurally
-could not catch.
-
-New behaviour worth trusting gets verified by *breaking it on purpose* and
-confirming a test fails.
+Running the tests and how they're weighted: see
+[the README](README.md#development).
