@@ -525,3 +525,53 @@ async def test_one_unknown_slug_is_singular(app, monkeypatch):
         r._chrome()
         foot = str(r.query_one("#foot").content)
         assert "1 unknown slug" in foot and "1 unknown slugs" not in foot
+
+
+async def test_the_check_list_and_the_percentage_cannot_disagree(app):
+    """The headline read its slow results from the cache, the list below it
+    hard-coded None. A cached `cmd` pass rendered as 100% over a column of ○,
+    and nothing caught it because the two were only ever tested apart."""
+    from mission_control import checks, config
+    cfg_path = Path(os.environ["MC_CONFIG"])
+    cfg_path.write_text(cfg_path.read_text() + '''
+  [[projects."alpha".checks]]
+  name = "always ok"
+  type = "cmd"
+  value = "true"
+''')
+    alpha = next(p for p in config.load().projects if p.name == "alpha")
+    checks.run_all_slow(alpha)                 # cache a passing cmd result
+
+    async with app.run_test(size=(100, 40)) as pilot:
+        await pilot.pause()
+        await pilot.press("enter")
+        await pilot.pause()
+        d = app.screen
+        block = str(d.query_one("#body").content).split("ACTIVITY")[0]
+        shown = block.count("✔") + block.count("☑")
+        ok, total, _ = checks.progress(d.p)
+        assert (ok, total) == (2, 3), "readme passes, the cached cmd passes, manual does not"
+        assert shown == ok, f"{shown} ticks drawn but the headline claims {ok} passing"
+        assert "never run" not in block, "a cached result is not 'never run'"
+
+
+async def test_c_on_the_detail_screen_runs_the_slow_checks(app):
+    """The list is where you look at checks, so it is where you want to run
+    them. Only the roster had the binding."""
+    from mission_control import checks, config
+    cfg_path = Path(os.environ["MC_CONFIG"])
+    cfg_path.write_text(cfg_path.read_text() + '''
+  [[projects."alpha".checks]]
+  name = "always ok"
+  type = "cmd"
+  value = "true"
+''')
+    async with app.run_test(size=(100, 40)) as pilot:
+        await pilot.pause()
+        await pilot.press("enter")
+        await pilot.pause()
+        alpha = next(p for p in config.load().projects if p.name == "alpha")
+        assert checks.cached(alpha).get("always ok") is None
+        await pilot.press("c")
+        await pilot.pause(0.6)
+        assert checks.cached(alpha).get("always ok") is True

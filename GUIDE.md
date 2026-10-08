@@ -88,6 +88,7 @@ The arrow keys `up`/`down` work everywhere `j`/`k` do, and `home`/`end` alongsid
 | --------------------- | -------------------------------------------------- |
 | `j` `k` or arrows | move a cursor through checks, commits and sessions |
 | `space`             | tick the selected `manual` check off, or back on  |
+| `c`                 | run this project's `cmd`/`gh_pr` checks           |
 | `⏎`                | resume                                             |
 | `w`                 | resume in a new tmux window                        |
 | `esc`               | back                                               |
@@ -297,7 +298,8 @@ of this app.
 the network, so they never run in a render path; the app would stall every few
 seconds. Press `c`, or run `mc check`. Results are cached and count towards the
 percentage, with the last-run time shown. A check that has never run reports as
-unresolved rather than failing, so the number never overstates.
+unresolved rather than failing, so the number never overstates. `c` works from
+the roster and from the detail screen.
 
 **2. `space` only ticks `manual` checks.** Overriding a `path` or `cmd` check by
 hand would leave a stored answer sitting beside a predicate that disagrees with

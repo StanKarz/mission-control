@@ -474,6 +474,7 @@ class Detail(Screen):
         Binding("j,down", "move(1)", "down"),
         Binding("k,up", "move(-1)", "up"),
         Binding("space", "toggle", "tick"),
+        Binding("c", "run_checks", "run checks"),
         Binding("enter", "resume", "resume"),
         Binding("w", "resume(True)", "new window"),
     ]
@@ -496,6 +497,7 @@ class Detail(Screen):
         # its percentage too rather than waiting for the next reload.
         self.cfg = cfg if cfg is not None else config.load()
         self.cursor = 0
+        self.slow: dict[str, bool | None] = checks.cached(project)
         self.items: list[tuple[str, object]] = []
 
     # -- layout ------------------------------------------------------------
@@ -566,7 +568,11 @@ class Detail(Screen):
 
     # -- rendering ---------------------------------------------------------
     def _check_lines(self, c, sel: bool) -> list[str]:
-        r = checks.evaluate_fast(self.p, c) if checks.is_fast(c) else None
+        # Read the same cache `checks.progress` reads. Hard-coding None here
+        # meant the headline counted a cached `cmd` pass while the row under it
+        # still rendered as unresolved: 100% above a column of empty circles.
+        r = (checks.evaluate_fast(self.p, c) if checks.is_fast(c)
+             else self.slow.get(c.name))
         if c.type == "manual":
             # A tick box, not a pass/fail mark. Nothing is measuring these, so
             # rendering an untouched one as a red ✖ says "failing" about a task
@@ -592,8 +598,8 @@ class Detail(Screen):
             state = f"[{GREEN}]done[/]" if c.done else f"[{MUTED}]not started[/]"
             out.append(f"      {state}[{DIM}] — space to toggle[/]")
         elif r is None:
-            out.append(f"      [{MUTED}]not evaluated here: {c.type} checks shell out, "
-                       f"so they run on demand[/]")
+            out.append(f"      [{MUTED}]never run — {c.type} checks shell out, "
+                       f"so press c[/]")
         else:
             out.append(f"      [{GREEN if r else RED}]"
                        f"{'passing' if r else 'not yet'}[/]")
@@ -633,6 +639,7 @@ class Detail(Screen):
 
     def _paint(self) -> None:
         p, w = self.p, self._w
+        self.slow = checks.cached(p)
         lines: list[str] = []
 
         def section(label: str) -> None:
@@ -688,7 +695,8 @@ class Detail(Screen):
         tick = (f"[{MUTED}]space tick   [/]"
                 if any(c.type == "manual" for c in p.checks) else "")
         self.query_one("#keys", Static).update(
-            f"{hint}{tick}[{DIM}]⏎ resume   w new window   esc back   q quit[/]")
+            f"{hint}{tick}[{DIM}]c checks   ⏎ resume   w new window   "
+            f"esc back   q quit[/]")
 
     # -- actions -----------------------------------------------------------
     def action_move(self, delta: int) -> None:
@@ -735,6 +743,25 @@ class Detail(Screen):
         ok, total, _ = checks.progress(self.p)
         self.notify(f"{c.name} — {'done' if c.done else 'not started'}"
                     f"   ({ok}/{total})")
+
+    def action_run_checks(self) -> None:
+        """Evaluate this project's slow checks. The roster has had this all
+        along, but the check list is where you actually want it."""
+        slow = [c for c in self.p.checks if not checks.is_fast(c)]
+        if not slow:
+            self.notify(f"{self.p.name}: no cmd/gh_pr checks to run")
+            return
+        self.notify(f"running {len(slow)} check(s)…")
+        self.run_worker(lambda: checks.run_all_slow(self.p), thread=True,
+                        name=f"checks:{self.p.name}")
+
+    def on_worker_state_changed(self, event) -> None:
+        from textual.worker import WorkerState
+        if event.state is WorkerState.SUCCESS and str(event.worker.name).startswith("checks:"):
+            res = event.worker.result or {}
+            self.notify(f"{sum(1 for v in res.values() if v)}/{len(res)} passing")
+            self._paint()
+            self._paint_hero()
 
     def action_resume(self, new_window: bool = False) -> None:
         resume(self, self.p, self.store, new_window)
