@@ -575,3 +575,62 @@ async def test_c_on_the_detail_screen_runs_the_slow_checks(app):
         await pilot.press("c")
         await pilot.pause(0.6)
         assert checks.cached(alpha).get("always ok") is True
+
+
+def _plain(widget) -> list[str]:
+    """The painted lines of a widget, markup stripped."""
+    from rich.text import Text
+    return Text.from_markup(str(widget.content)).plain.split("\n")
+
+
+async def test_row_furniture_matches_the_layout(app):
+    """`ROW_FURNITURE` is the width of everything on a row that is not the name
+    or the bar, and three other things are sized from it. Nothing stops `_row`
+    gaining a column and leaving the constant behind, so measure it."""
+    from mission_control.app import ROW_FURNITURE
+
+    async with app.run_test(size=(100, 40)) as pilot:
+        await pilot.pause()
+        r = app.screen
+        name, barw = r._layout()
+        header = _plain(r.row_widgets[0])[0]
+        assert len(header) == name + barw + ROW_FURNITURE, (
+            f"a painted row header is {len(header)} columns but the layout "
+            f"predicts {name + barw + ROW_FURNITURE}; ROW_FURNITURE is stale"
+        )
+
+
+async def test_the_chrome_and_the_preview_never_overhang_the_rows(app):
+    """The name and bar columns cap, so a row stops growing at about 100
+    columns. The rule, the header and the selected row's preview lines used to
+    keep scaling with the pane, leaving them hanging past the row: at 140
+    columns the preview ran to 130 against an 87-column row.
+
+    alpha needs a description longer than a row for this to bite. `fit` pads a
+    short one with spaces, and padding is invisible once stripped: the first
+    version of this test measured stripped lines and passed against the bug.
+    """
+    cfg_path = Path(os.environ["MC_CONFIG"])
+    cfg_path.write_text(cfg_path.read_text().replace(
+        'phase = "building"',
+        'phase = "building"\ndesc = "'
+        + "a description comfortably longer than any row " * 4 + '"',
+    ))
+    async with app.run_test(size=(76, 40)) as pilot:
+        await pilot.pause()
+        for width in (76, 100, 140, 220):
+            await pilot.resize_terminal(width, 40)
+            await pilot.pause()
+            r = app.screen
+            header = len(_plain(r.row_widgets[0])[0])
+            rule = len(_plain(r.query_one("#rule"))[0])
+            widest = max(len(ln.rstrip())
+                         for w in r.row_widgets for ln in _plain(w))
+            assert rule == header, (
+                f"at {width} columns the rule is {rule} wide over a "
+                f"{header}-column row"
+            )
+            assert widest <= header, (
+                f"at {width} columns a row line runs to {widest}, past the "
+                f"{header}-column header"
+            )

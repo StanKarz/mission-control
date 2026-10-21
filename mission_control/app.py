@@ -22,6 +22,12 @@ from .sessions import Store
 ORDER = {"active": 0, "blocked": 1, "paused": 2, "done": 3,
          "archived": 4, "ignored": 5}
 
+# Everything on a row besides the name and bar columns: selection edge, status
+# glyph, three single spaces, ` 100%`, a three-space gap and a seven-day
+# sparkline. `test_row_furniture_matches_the_layout` measures a painted row
+# against it, so editing `_row` without editing this fails rather than drifting.
+ROW_FURNITURE = 19
+
 
 class Roster(Screen):
     BINDINGS = [
@@ -151,6 +157,20 @@ class Roster(Screen):
         width = max(16, min(avail - name - 24, 30))
         return name, width
 
+    def _content_width(self) -> int:
+        """One answer to "how wide is a row", for everything that has to agree.
+
+        `_layout` caps the name and bar columns, so a row stops growing at
+        roughly 100 columns. The rule, the header and the preview lines each
+        sized themselves from the pane instead, so stretching a wide pane left
+        a full-width rule and preview text overhanging a header line that
+        reached barely half way: at 140 columns, preview lines ran to 130
+        against a 87-column row.
+        """
+        pane = max((self.size.width or 76) - 6, 40)
+        name, barw = self._layout()
+        return min(pane, name + barw + ROW_FURNITURE)
+
     def _row(self, p: config.Project, sel: bool) -> str:
         stranded = not p.exists
         status = "stranded" if stranded else p.status
@@ -202,7 +222,8 @@ class Roster(Screen):
         percentage. Only computed for one row, so the git call per repaint is
         affordable.
         """
-        w = max((self.size.width or 76) - 10, 40)
+        # Indented five columns, so it gets the row width less that indent.
+        w = max(self._content_width() - 5, 40)
         out: list[str] = []
         if p.desc:
             out.append(f"     [{MUTED}]{fit(p.desc, w)}[/]")
@@ -245,7 +266,7 @@ class Roster(Screen):
     def _chrome(self) -> None:
         n = len(self.rows)
         act = sum(1 for p in self.rows if p.status == "active")
-        w = max((self.size.width or 76) - 6, 40)
+        w = self._content_width()
         self.query_one("#rule", Static).update(f"[{FAINT}]{'━' * w}[/]")
         right = f"{act} active  ·  {datetime.now():%a %d %b %H:%M}"
         self.query_one("#head", Static).update(
