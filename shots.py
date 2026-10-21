@@ -55,11 +55,28 @@ ACTIVITY = {
     "harmonica-log":     [],
 }
 
+# Cycled per session, so the detail screen does not list one title three times.
 TITLES = {
-    "orbital-sim": "Baseline PPO run and eval harness",
-    "ascii-renderer": "Edge detection pass over the luminance ramp",
-    "pgexercises-notes": "Window function exercises 1-12",
-    "rally-cutter": "Audio onset detection spike",
+    "orbital-sim": ["Baseline PPO run and eval harness",
+                    "Reward shaping, third attempt",
+                    "Seed sweep and the variance it exposed"],
+    "ascii-renderer": ["Edge detection over the luminance ramp",
+                       "Glyph ramp picked by hand",
+                       "Downsampling without losing the edges"],
+    "pgexercises-notes": ["Window function exercises 1-12",
+                          "Joins section, worked solutions"],
+    "rally-cutter": ["Audio onset detection spike"],
+}
+
+# (days ago, subject) per project, so the commits row has something in it.
+COMMITS = {
+    "orbital-sim": [(6, "env: fix the termination bound on the docking cone"),
+                    (3, "eval: report per-seed return, not just the mean"),
+                    (1, "baselines: log episode return per seed")],
+    "ascii-renderer": [(4, "ramp: pick glyphs by coverage, not by ascii order"),
+                       (0, "edges: keep the Sobel pass above the downsample")],
+    "pgexercises-notes": [(5, "joins: add the self-join worked example")],
+    "rally-cutter": [],
 }
 
 
@@ -70,8 +87,13 @@ def _entry(kind: str, when: datetime, **kw) -> str:
                        **kw})
 
 
+# Two of the demo projects have a session open, in the two states the roster
+# distinguishes: mid-turn, and finished and waiting on you.
+LIVE = {"ascii-renderer": "working", "orbital-sim": "needs-you"}
+
+
 def _transcript(path: Path, project: Path, title: str, edits: int,
-                when: datetime, live: bool) -> None:
+                when: datetime, live: str | None) -> None:
     """One session's worth of plausible jsonl."""
     lines = [json.dumps({"type": "ai-title", "aiTitle": title}),
              _entry("user", when, message={"content": "carry on from yesterday"})]
@@ -80,13 +102,37 @@ def _transcript(path: Path, project: Path, title: str, edits: int,
             "assistant", when + timedelta(seconds=i * 7),
             message={"content": [{"type": "tool_use", "name": "Edit",
                                   "input": {"file_path": str(project / f"src/mod{i % 5}.py")}}]}))
-    # A session reads as live only while its file is fresh and its last
-    # assistant entry has no end_turn, so the roster shows "working".
-    if live:
+    # A session reads as live only while its file is fresh. What it is doing
+    # then comes from the last assistant entry: end_turn means it has finished
+    # and is waiting on a human, anything else means it is still mid-turn.
+    if live == "working":
         lines.append(_entry("assistant", datetime.now(),
                             message={"content": [{"type": "tool_use",
                                                   "name": "Bash", "input": {}}]}))
+    elif live == "needs-you":
+        lines.append(_entry("assistant", datetime.now(),
+                            message={"stop_reason": "end_turn",
+                                     "content": [{"type": "text",
+                                                  "text": "which seed should I use?"}]}))
     path.write_text("\n".join(lines) + "\n")
+
+
+def _repos(root: Path, now: datetime) -> None:
+    """Give each project real git history, dated across the week."""
+    env = {**os.environ, "GIT_AUTHOR_NAME": "demo", "GIT_AUTHOR_EMAIL": "d@e",
+           "GIT_COMMITTER_NAME": "demo", "GIT_COMMITTER_EMAIL": "d@e"}
+    for name, commits in COMMITS.items():
+        d = root / name
+        if not commits:
+            continue
+        subprocess.run(["git", "init", "-q", "-b", "main"], cwd=d, check=True)
+        for i, (ago, subject) in enumerate(commits):
+            (d / "src" / f"mod{i}.py").write_text(f"# {subject}\n")
+            when = (now - timedelta(days=ago, hours=4)).strftime("%Y-%m-%dT%H:%M:%S")
+            subprocess.run(["git", "add", "-A"], cwd=d, check=True, env=env)
+            subprocess.run(["git", "commit", "-q", "-m", subject], cwd=d, check=True,
+                           env={**env, "GIT_AUTHOR_DATE": when,
+                                "GIT_COMMITTER_DATE": when})
 
 
 def build(tmp: Path) -> Path:
@@ -126,17 +172,8 @@ def build(tmp: Path) -> Path:
                 f.write_text("x\n")
         lines.append('')
 
-    # A repo with history, so the selected row can show a real last commit.
-    sim = root / "orbital-sim"
-    env = {**os.environ, "GIT_AUTHOR_NAME": "demo", "GIT_AUTHOR_EMAIL": "d@e",
-           "GIT_COMMITTER_NAME": "demo", "GIT_COMMITTER_EMAIL": "d@e"}
-    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=sim, check=True)
-    subprocess.run(["git", "add", "-A"], cwd=sim, check=True, env=env)
-    subprocess.run(["git", "commit", "-q", "-m",
-                    "baselines: log episode return per seed, not just the mean"],
-                   cwd=sim, check=True, env=env)
-
     now = datetime.now()
+    _repos(root, now)
     for name, days in ACTIVITY.items():
         d = root / name
         slug = store / sessions.slug(str(d))
@@ -144,16 +181,23 @@ def build(tmp: Path) -> Path:
         for i, (ago, edits) in enumerate(days):
             when = now - timedelta(days=ago, hours=2)
             f = slug / f"{name}-{i}.jsonl"
-            _transcript(f, d, TITLES.get(name, name), edits, when,
-                        live=(name == "ascii-renderer" and ago == 0))
-            if ago:                      # backdate so week() bucketises it
-                stamp = when.timestamp()
+            state = LIVE.get(name) if ago == 0 else None
+            titles = TITLES.get(name) or [name]
+            _transcript(f, d, titles[i % len(titles)], edits, when, state)
+            if state is None:
+                # Backdate so week() bucketises it, and so today's own sessions
+                # read as finished rather than as a session still running.
+                stamp = (when if ago else now - timedelta(hours=3)).timestamp()
                 os.utime(f, (stamp, stamp))
 
     cfg = tmp / "progress.toml"
     cfg.write_text("\n".join(lines))
     os.environ["MC_CONFIG"] = str(cfg)
     config.PATH = cfg
+    # The detail screen shortens a path against Path.home(), which reads $HOME.
+    # Pointing it at the demo root turns a /var/folders/… temp path into
+    # ~/projects/orbital-sim. Set last: the git calls above want the real one.
+    os.environ["HOME"] = str(tmp)
     return cfg
 
 
@@ -170,6 +214,12 @@ async def shoot(tmp: Path) -> None:
         await pilot.pause()
         app.save_screenshot(str(OUT / "detail.svg"))
         print("wrote shots/detail.svg")
+        await pilot.press("escape")
+        await pilot.pause()
+        await pilot.press("m")
+        await pilot.pause()
+        app.save_screenshot(str(OUT / "checkpoint.svg"))
+        print("wrote shots/checkpoint.svg")
 
 
 def main() -> None:

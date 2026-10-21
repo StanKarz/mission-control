@@ -3,7 +3,7 @@
 A Textual TUI for keeping track of several Claude Code projects at once.
 
 <p align="center">
-  <img src="shots/roster.png" width="760" alt="the roster: one row per project, with live session state">
+  <img src="shots/roster.svg" width="820" alt="the roster: one row per project, with live session state">
 </p>
 
 **[Full guide →](GUIDE.md)**: commands, daily flow, and the gotchas.
