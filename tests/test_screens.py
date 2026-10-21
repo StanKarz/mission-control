@@ -634,3 +634,31 @@ async def test_the_chrome_and_the_preview_never_overhang_the_rows(app):
                 f"at {width} columns a row line runs to {widest}, past the "
                 f"{header}-column header"
             )
+
+
+async def test_the_preview_does_not_call_an_unrun_check_passing(app):
+    """A slow check that has never run counts as not-passing in the headline.
+    The preview searched only for checks known to be False, found none, and
+    fell through to "all checks passing" over a headline reading 2/3."""
+    from mission_control import checks
+    cfg_path = Path(os.environ["MC_CONFIG"])
+    # The manual check has to pass, or it is itself the next unmet check and
+    # the preview never reaches the branch under test.
+    cfg_path.write_text(cfg_path.read_text().replace("done = false", "done = true") + '''
+  [[projects."alpha".checks]]
+  name = "never been run"
+  type = "cmd"
+  value = "true"
+''')
+    async with app.run_test(size=(100, 40)) as pilot:
+        await pilot.pause()
+        r = app.screen
+        alpha = next(p for p in r.rows if p.name == "alpha")
+        assert checks.cached(alpha).get("never been run") is None
+        ok, total, _ = checks.progress(alpha)
+        assert (ok, total) == (2, 3), "readme and the manual pass, the unrun cmd does not"
+        shown = "\n".join(_plain(r.row_widgets[0]))
+        assert "all checks passing" not in shown, (
+            f"headline says {ok}/{total} but the preview claims everything passes"
+        )
+        assert "never run" in shown

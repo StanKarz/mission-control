@@ -228,17 +228,27 @@ class Roster(Screen):
         if p.desc:
             out.append(f"     [{MUTED}]{fit(p.desc, w)}[/]")
 
+        slow = checks.cached(p)
         nxt = next((c for c in p.checks
                     if checks.is_fast(c) and checks.evaluate_fast(p, c) is False), None)
         if nxt is None:
-            slow = checks.cached(p)
             nxt = next((c for c in p.checks
                         if not checks.is_fast(c) and slow.get(c.name) is False), None)
+        # A slow check that has never run is neither passing nor failing, so the
+        # search above skips it and used to fall through to "all checks
+        # passing" — over a headline reading 2/3 and 67%, which counts it as
+        # not passing. Unresolved is its own state and has its own line.
+        unrun = [c for c in p.checks
+                 if not checks.is_fast(c) and slow.get(c.name) is None]
         if nxt:
             detail = nxt.value or "manual — ⏎ then space to tick"
             room = max(w - (5 + 6 + len(nxt.name) + 3), 16)
             out.append(f"     [{RED}]next[/]  [{FG}]{nxt.name}[/]   "
                        f"[{DIM}]{fit(detail, room)}[/]")
+        elif unrun:
+            n = len(unrun)
+            out.append(f"     [{AMBER}]{n} check{'' if n == 1 else 's'} never "
+                       f"run[/][{DIM}] — press c[/]")
         elif p.checks:
             out.append(f"     [{GREEN}]all checks passing[/]")
         else:
