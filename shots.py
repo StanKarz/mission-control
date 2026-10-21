@@ -50,7 +50,7 @@ PROJECTS = [
 ACTIVITY = {
     "orbital-sim":       [(6, 14), (5, 9), (3, 22), (1, 31), (0, 18)],
     "ascii-renderer":    [(4, 6), (2, 17), (0, 9)],
-    "pgexercises-notes": [(5, 11), (4, 4)],
+    "pgexercises-notes": [(5, 11), (4, 4), (1, 8)],
     "rally-cutter":      [(6, 3)],
     "harmonica-log":     [],
 }
@@ -75,7 +75,8 @@ COMMITS = {
                     (1, "baselines: log episode return per seed")],
     "ascii-renderer": [(4, "ramp: pick glyphs by coverage, not by ascii order"),
                        (0, "edges: keep the Sobel pass above the downsample")],
-    "pgexercises-notes": [(5, "joins: add the self-join worked example")],
+    "pgexercises-notes": [(5, "joins: add the self-join worked example"),
+                          (1, "windows: rank vs dense_rank, with the tie case")],
     "rally-cutter": [],
 }
 
@@ -222,12 +223,41 @@ async def shoot(tmp: Path) -> None:
         print("wrote shots/checkpoint.svg")
 
 
+def report_shot() -> None:
+    """`mc week` as an SVG.
+
+    The reports are plain ANSI on stdout rather than a Textual screen, so
+    there is no save_screenshot to call. rich parses the escape codes back
+    into styled text and writes a terminal frame matching the other shots.
+    """
+    import io
+
+    from rich.console import Console
+    from rich.text import Text
+
+    from mission_control import config, report
+    from mission_control.sessions import Store
+
+    # Which projects appear depends on the day this is run: the week starts on
+    # Monday, so activity dated five days back falls outside it by midweek.
+    # The demo data keeps something recent in three projects for that reason.
+    cfg, store = config.load(), Store()
+    start, end = report.week_bounds(back=0)
+    rep = report.build(cfg, store, start, end, "THIS WEEK")
+    console = Console(record=True, width=84, file=io.StringIO(),
+                      force_terminal=True, color_system="truecolor")
+    console.print(Text.from_ansi(report.render(rep, colour=True)))
+    console.save_svg(str(OUT / "week.svg"), title="mc week")
+    print("wrote shots/week.svg")
+
+
 def main() -> None:
     import asyncio
     with tempfile.TemporaryDirectory() as td:
         tmp = Path(td)
         build(tmp)
         asyncio.run(shoot(tmp))
+        report_shot()
 
 
 if __name__ == "__main__":
